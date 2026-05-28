@@ -59,7 +59,10 @@ def _nav_html() -> str:
     return f"""
     <header class="nav" id="dc-nav">
       {_brand_html()}
-      <a class="btn btn-primary" href="#dc-upload">영상 업로드 {arrow}</a>
+      <div class="nav-actions">
+        <a class="nav-link" id="dc-history-link" href="#">기록</a>
+        <a class="btn btn-primary" href="#dc-upload">영상 업로드 {arrow}</a>
+      </div>
     </header>
     """
 
@@ -508,13 +511,6 @@ def idle_hero_html() -> str:
     )
 
 
-# Back-compat empty stubs — referenced from app.py.
-IDLE_DROPZONE_INTRO = ""
-IDLE_HOWITWORKS_HTML = ""
-IDLE_HERO_HTML = ""
-HERO_GRID_BG = ""
-
-
 # ─── UPLOADED — v4 "Ready" screen ──────────────────────────────
 # Built as a SINGLE HTML blob (not split across multiple gr.HTML + gr.Row).
 # Reason: when we used gr.Row/gr.Column to lay out nav / stepper / stage /
@@ -706,172 +702,246 @@ def ready_screen_html(
 """
 
 
-# Legacy stubs — kept so existing imports don't break.
-def uploaded_header_html(filename: str = "", duration: float = 0.0) -> str:
-    return ready_screen_html(name=filename, duration=duration)
+# ─── ANALYZING — v5 redesign ──────────────────────────────────
+# Soul of the screen: the LIVE FRAME with real bboxes burned in (or SVG-
+# overlaid from FrameDetections). Everything else (% / ETA / counters /
+# stepper) is small mono chrome. The phase-driven H1 changes verb with
+# each stage of the pipeline:
+#   detect → 보고 / events → 추리고 / vlm → 쓰고 / score → 계산 / render → 만들고
+# All values come from real run_analysis generator yields; no faked client
+# animation. The screen is one self-contained .dc-v3-root blob (no gr.Row).
+
+# Ordered phase definitions — drives stepper / phase list / H1 narrative.
+_ANALYZ_PHASE_DEFS = [
+    # (key, stepper_short, list_full,  h1_pre,        h1_verb,                  nav_label)
+    ("detect", "검출",       "객체 검출",    "프레임을",     "보고 있습니다.",            "DETECT"),
+    ("events", "이벤트",     "이벤트 추출",  "위험 구간을",   "추리고 있습니다.",          "EVENTS"),
+    ("vlm",    "코칭",       "코칭 작성",    "코칭 문장을",   "쓰고 있습니다.",            "VLM"),
+    ("score",  "점수",       "점수 산정",    "점수를",       "계산하고 있습니다.",        "SCORE"),
+    ("render", "출력",       "영상 출력",    "주석 영상을",   "만들고 있습니다.",          "RENDER"),
+]
 
 
-UPLOADED_PREVIEW_CARDS_HTML = ""
+def _phase_index(phase: str) -> int:
+    for i, (key, *_rest) in enumerate(_ANALYZ_PHASE_DEFS):
+        if key == phase:
+            return i
+    return 0
 
 
-# ─── ANALYZING — v4 live-analysis screen ──────────────────────
-# Mirrors DrivingAssis Analyzing.html: nav (with LIVE pill) · stepper
-# (steps 01-02 done, 03 current, 04 pending) · stage (progress + pipeline
-# mini on left, video with live bbox overlay + scan beam on right) ·
-# counter strip · 3 preview cards (score / key moments / coaching) ·
-# toast layer · footer.
-#
-# The actual analysis runs in Python; this screen plays a 30-second
-# animated demo loop on the client (driven by JS in DC_BOOT_JS) until
-# Gradio swaps in the RESULTS screen.
+def _stepper_html(phase: str) -> str:
+    idx = _phase_index(phase)
+    out = []
+    for i, (key, short, *_rest) in enumerate(_ANALYZ_PHASE_DEFS):
+        cls = "current" if i == idx else ("done" if i < idx else "")
+        pulse = '<span class="pulse"></span>' if i == idx else ""
+        out.append(
+            f'<div class="analyz-step {cls}" data-phase="{key}">'
+            f'<span class="num">{i + 1:02d}</span>{pulse}'
+            f'<span>{short}</span>'
+            f'</div>'
+        )
+    return "".join(out)
 
-def analyzing_screen_html(video_path: str = "", name: str = "",
-                          session_id: str = "—") -> str:
-    vurl = _video_url(video_path)
-    video_el = (
-        f'<video class="analyz-still" src="{vurl}" autoplay muted loop'
-        f' playsinline preload="metadata"></video>'
-        if vurl else
-        '<div class="analyz-still analyz-still-empty"></div>'
-    )
+
+def _phase_list_html(phase: str) -> str:
+    idx = _phase_index(phase)
+    out = []
+    for i, (key, _short, full, *_rest) in enumerate(_ANALYZ_PHASE_DEFS):
+        if i < idx:
+            cls, status = "done", "완료"
+        elif i == idx:
+            cls, status = "current", "진행 중"
+        else:
+            cls, status = "pending", "대기"
+        out.append(
+            f'<li class="{cls}" data-phase="{key}">'
+            f'<span class="num">{i + 1:02d}</span>'
+            f'<span class="name">{full}</span>'
+            f'<span class="stt">{status}</span>'
+            f'</li>'
+        )
+    return "".join(out)
+
+
+# Class → severity mapping for the live bbox overlay. Matches the counter
+# strip color language: vehicles/pedestrians = signal, two-wheeled = amber,
+# traffic markers stay muted (default signal). Risk tone is reserved for
+# bboxes inside a flagged event region (not detected here per-frame).
+_BBOX_CLS_TIER = {
+    "car": "signal", "truck": "signal", "bus": "signal",
+    "person": "signal",
+    "bike": "amber", "motor": "amber", "rider": "amber",
+    "traffic light": "signal", "traffic sign": "signal",
+}
+
+
+def _bbox_overlay_svg(det, frame_w: int, frame_h: int) -> str:
+    """Live bbox layer over the static poster. Uses the latest FrameDetections
+    object so the boxes sync exactly with what the model just emitted.
+    Returns empty string when there are no detections to draw."""
+    if not det or not det.detections or frame_w <= 0 or frame_h <= 0:
+        return ""
+    # Label box geometry — sized to fit "VEHICLE 0.94" at 9px mono
+    LABEL_H = max(14, int(frame_h * 0.020))
+    parts = []
+    for d in det.detections[:12]:  # cap so the frame never looks like graffiti
+        x1, y1, x2, y2 = d.bbox
+        w = max(0, x2 - x1)
+        h = max(0, y2 - y1)
+        if w < 4 or h < 4:
+            continue
+        tier = _BBOX_CLS_TIER.get(d.cls, "signal")
+        cls_extra = "" if tier == "signal" else f" {tier}"
+        label = f"{d.cls.upper()} {d.confidence:.2f}"
+        # Label background bar sits just above the bbox top edge
+        label_w = min(int(w), max(60, len(label) * 7))
+        label_y = max(0, y1 - LABEL_H - 2)
+        text_cls = "dark" if tier == "signal" else "amber-dark"
+        parts.append(
+            f'<rect class="{tier}" x="{x1}" y="{y1}" width="{w}" height="{h}"/>'
+            f'<rect class="label-bg{cls_extra}" x="{x1}" y="{label_y}" '
+            f'width="{label_w}" height="{LABEL_H}"/>'
+            f'<text class="{text_cls}" x="{x1 + 5}" y="{label_y + LABEL_H - 4}">{label}</text>'
+        )
+    if not parts:
+        return ""
+    return (f'<svg class="svg-overlay" viewBox="0 0 {frame_w} {frame_h}" '
+            f'preserveAspectRatio="none">{"".join(parts)}</svg>')
+
+
+def analyzing_screen_html(
+    poster_path: str = "",
+    name: str = "",
+    session_id: str = "—",
+    pct: int = 0,
+    frame_idx: int = 0,
+    total_frames: int = 0,
+    proc_fps: float = 0.0,
+    eta_sec: int = 0,
+    veh: int = 0,
+    ped: int = 0,
+    two: int = 0,
+    risk: int = 0,
+    phase: str = "detect",
+    det=None,
+    frame_w: int = 0,
+    frame_h: int = 0,
+) -> str:
+    """Live-analysis screen — v5 redesign.
+
+    Every number here (pct, frame counter, processing fps, ETA, cumulative
+    per-class detection counts, phase) reflects the actual run_analysis
+    generator's state at the moment of yield. The right-side frame shows a
+    poster jpg that the server periodically overwrites with the most-recent
+    processed frame; on top of it, an SVG overlay draws bboxes from the
+    latest FrameDetections (passed via `det`). No fake client animation.
+
+    Counter labels read 차량·보행자·이륜차·위험 ··· but the numbers are
+    cumulative across processed frames (vs the previous per-frame snapshot).
+    With no tracker present this overstates unique objects, so labels are
+    framed as "검출된 N건" rather than "고유 차량 N대".
+    """
     safe_name = name or "—"
+    idx = _phase_index(phase)
+    _, _short, _full, h1_pre, h1_verb, nav_label = _ANALYZ_PHASE_DEFS[idx]
+    pct = max(0, min(100, int(pct)))
+    eta_str = f"약 {eta_sec}초" if eta_sec > 0 else "마무리"
+    frame_str = f"{frame_idx:,} / {total_frames:,}" if total_frames else f"{frame_idx:,}"
+    det_now = veh + ped + two
+
+    poster_url = _video_url(poster_path)
+    poster_el = (
+        f'<img class="poster" src="{poster_url}" alt="현재 처리 중인 프레임"/>'
+        if poster_url else
+        '<div class="poster poster-empty"></div>'
+    )
+    bbox_svg = _bbox_overlay_svg(det, frame_w, frame_h)
+
     return f"""
 <div class="dc-v3-root analyz-root">
 
-  <nav class="ready-nav">
-    <a class="brand" href="#dc-top" aria-label="DrivingAssis">
-      <span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>
-      <span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>
+  <nav class="analyz-nav">
+    <a class="analyz-brand" href="#dc-top" aria-label="DrivingAssis">
+      <span class="mark" aria-hidden="true">{_BRAND_SVG}</span>
+      <span>DRIVING<span class="accent">ASSIS</span></span>
     </a>
-    <div class="ready-nav-right">
-      <span class="analyz-live-dot">LIVE</span>
-      <span class="ready-session">SESSION · {session_id}</span>
+    <div class="analyz-nav-right">
+      <span class="live-pill"><span class="dot"></span>LIVE · {nav_label}</span>
+      <span>SESSION · {session_id}</span>
+      <button class="analyz-cancel" type="button" id="analyz-cancel-btn">분석 중단</button>
     </div>
   </nav>
 
-  <div class="ready-stepper-wrap">
-    <div class="ready-stepper" role="list">
-      <div class="ready-step done" role="listitem">
-        <span class="num">01</span><span class="check">✓</span><span>업로드</span>
-      </div>
-      <div class="ready-step done" role="listitem">
-        <span class="num">02</span><span class="check">✓</span><span>검토</span>
-      </div>
-      <div class="ready-step current" role="listitem">
-        <span class="num">03</span><span class="pulse" aria-hidden="true"></span><span>분석</span>
-      </div>
-      <div class="ready-step" role="listitem">
-        <span class="num">04</span><span>리포트</span>
-      </div>
-    </div>
+  <div class="analyz-stepper">
+    {_stepper_html(phase)}
   </div>
 
-  <section class="ready-stage">
-    <div class="ready-rail">
-      <div class="ready-rail-status">
-        <span class="dot"></span>
-        <span class="label label-signal">Analyzing · 분석 중</span>
-      </div>
-      <h1>
-        프레임을<br/>
-        <span class="accent" id="analyz-title-accent">읽고 있습니다.</span>
-        <span class="em" id="analyz-sub">지금 0번째 프레임 · 차량 0개 추적 중</span>
-      </h1>
-      <div class="ready-filename">
-        {_file_icon_svg()}
-        <div>{safe_name}</div>
-      </div>
+  <section class="analyz-stage">
 
-      <div class="analyz-progress-block">
-        <div class="analyz-progress-head">
-          <div class="analyz-pct"><span id="analyz-pct">0</span><span class="unit">%</span></div>
-          <div class="analyz-eta">남은 시간 · <b id="analyz-eta">약 30초</b></div>
-        </div>
-        <div class="analyz-progress-bar">
-          <div class="analyz-progress-fill" id="analyz-fill"></div>
-          <div class="analyz-progress-scan"></div>
-        </div>
-        <div class="analyz-progress-foot">
-          <span>처리 프레임 · <b id="analyz-frame">0 / 300</b></span>
-          <span><b id="analyz-fps">0</b> 프레임/초</span>
+    <aside class="analyz-rail">
+      <div>
+        <span class="phase-kicker">PHASE {idx + 1:02d} <span class="of">/ 05</span></span>
+        <h1 class="analyz-h1">
+          <span>{h1_pre}</span>
+          <em>{h1_verb}</em>
+        </h1>
+        <div class="analyz-filename">
+          {_file_icon_svg()}
+          <span>{safe_name}</span>
         </div>
       </div>
 
-      <div class="analyz-pl-mini">
-        <div class="analyz-pl-step done" id="analyz-pl0">
-          <span class="analyz-pl-num">01</span>
-          <span class="analyz-pl-name">프레임 추출</span>
-          <span class="analyz-pl-status">완료 · 4.8s</span>
+      <div class="analyz-progress">
+        <div class="row">
+          <span class="pct">{pct}<span class="unit">%</span></span>
+          <span class="eta">남은 시간 · <b>{eta_str}</b></span>
         </div>
-        <div class="analyz-pl-step current" id="analyz-pl1">
-          <span class="analyz-pl-num">02</span>
-          <span class="analyz-pl-name">객체 검출</span>
-          <span class="analyz-pl-status"><span class="analyz-pulse-dot"></span>진행 중</span>
-        </div>
-        <div class="analyz-pl-step pending" id="analyz-pl2">
-          <span class="analyz-pl-num">03</span>
-          <span class="analyz-pl-name">위험 구간 분류</span>
-          <span class="analyz-pl-status">대기</span>
-        </div>
-        <div class="analyz-pl-step pending" id="analyz-pl3">
-          <span class="analyz-pl-num">04</span>
-          <span class="analyz-pl-name">리포트 생성</span>
-          <span class="analyz-pl-status">대기</span>
+        <div class="bar"><div class="fill" style="width:{pct}%"></div></div>
+        <div class="meta">
+          <span>프레임 · <b>{frame_str}</b></span>
+          <span><b>{proc_fps:.0f}</b> f/s</span>
         </div>
       </div>
-    </div>
 
-    <div class="ready-video-stage">
-      <div class="ready-video-frame analyz-video-frame">
-        {video_el}
-        <span class="ready-br ready-br-tl"></span>
-        <span class="ready-br ready-br-tr"></span>
-        <span class="ready-br ready-br-bl"></span>
-        <span class="ready-br ready-br-br"></span>
-        <div class="ready-hud ready-hud-tl">
-          <span class="ready-hud-tag"><span class="analyz-live-dot-inline"></span>ANALYZING · CH1</span>
-        </div>
-        <div class="ready-hud ready-hud-tr">
-          <span class="ready-hud-tag" id="analyz-hud-frame">FRAME 0 / 300</span>
-        </div>
-        <div class="ready-hud ready-hud-bl" style="bottom:22px;left:50px">
-          <span class="ready-hud-tag" id="analyz-hud-tc">00:00.00s</span>
-        </div>
-        <div class="ready-hud ready-hud-br" style="bottom:22px;right:50px">
-          <span class="ready-hud-tag" id="analyz-hud-det">DET <span style="color:var(--signal)">0</span></span>
-        </div>
-        <svg class="analyz-overlay" viewBox="0 0 1600 900" preserveAspectRatio="none" id="analyz-overlay"></svg>
+      <ul class="analyz-phases">
+        {_phase_list_html(phase)}
+      </ul>
+    </aside>
+
+    <div class="analyz-frame">
+      {poster_el}
+      {bbox_svg}
+
+      <span class="br br-tl"></span>
+      <span class="br br-tr"></span>
+      <span class="br br-bl"></span>
+      <span class="br br-br"></span>
+
+      <div class="hud hud-tl">
+        <span class="hud-chip"><span class="dot"></span>ANALYZING · CH1</span>
       </div>
-
-      <div class="analyz-counter-strip">
-        <div class="analyz-counter-cell signal">
-          <span class="k">차량 · Vehicles</span>
-          <span class="v"><span id="analyz-c-veh">0</span></span>
-        </div>
-        <div class="analyz-counter-cell">
-          <span class="k">보행자 · Pedestrians</span>
-          <span class="v"><span id="analyz-c-ped">0</span></span>
-        </div>
-        <div class="analyz-counter-cell amber">
-          <span class="k">이륜차 · Two-wheeled</span>
-          <span class="v"><span id="analyz-c-two">0</span></span>
-        </div>
-        <div class="analyz-counter-cell risk">
-          <span class="k">위험 이벤트 · Risk</span>
-          <span class="v"><span id="analyz-c-risk">0</span></span>
-        </div>
+      <div class="hud hud-tr">
+        <span class="hud-chip">FRAME {frame_str}</span>
+      </div>
+      <div class="hud hud-bl">
+        <span class="hud-chip">PHASE · <span class="accent">{nav_label}</span></span>
+      </div>
+      <div class="hud hud-br">
+        <span class="hud-chip">DET <span class="accent">{det_now}</span></span>
       </div>
     </div>
   </section>
 
-  <footer class="ready-foot">© 2026 DRIVINGASSIS · 분석 세션 {session_id}</footer>
+  <div class="analyz-counters">
+    <div class="analyz-counter signal"><span class="k">차량 · Vehicle</span><span class="v">{veh}</span></div>
+    <div class="analyz-counter"      ><span class="k">보행자 · Pedestrian</span><span class="v">{ped}</span></div>
+    <div class="analyz-counter amber"><span class="k">이륜차 · Two-wheeled</span><span class="v">{two}</span></div>
+    <div class="analyz-counter risk" ><span class="k">위험 이벤트 · Risk</span><span class="v">{risk}</span></div>
+  </div>
 
 </div>
 """
-
-
-# Legacy stub — kept so existing imports keep resolving.
-ANALYZING_HTML = ""
 
 
 # ─── RESULTS — v4 cinematic finale ────────────────────────────
@@ -906,9 +976,31 @@ def _category_tier(s: int) -> str:
     return "tier-bad"
 
 
-def _hero_sentence(score, events) -> tuple[str, str]:
+def _count_by_category(events) -> dict[str, int]:
+    """Tally event counts keyed by score-category short key (e.g. 'distance').
+    Used to detect repeated patterns across runs."""
+    out: dict[str, int] = {}
+    for e in events or []:
+        out[e.category] = out.get(e.category, 0) + 1
+    return out
+
+
+# Korean label (CategoryScore.name_ko) → short key (Event.category).
+# Built lazily once so we can look events up by the focus area's Korean name.
+def _name_ko_to_key() -> dict[str, str]:
+    from core.schema import SCORE_CATEGORY_DEFS
+    return {ko: key for key, _en, ko, _icon in SCORE_CATEGORY_DEFS}
+
+
+def _hero_sentence(score, events, prior=None) -> tuple[str, str]:
     """Returns (hero_html, secondary_text) — 2-line natural language summary
-    of the drive. The hero may contain a single <em> tag for the focus area."""
+    of the drive. The hero may contain a single <em> tag for emphasis.
+
+    When `prior` (a previous AnalysisRecord) is provided, the voice shifts
+    from one-shot scorecard ("오늘 주행, 정말 안정적이었어요") to a coach who
+    remembers ("지난번에 얘기한 차간거리, 이번엔 좋아졌어요"). The repeated-
+    focus-area case is the killer moment — that's the line TMAP can't say.
+    """
     if not score:
         return ("분석이 완료되었어요.", "결과를 정리하고 있어요.")
 
@@ -918,7 +1010,11 @@ def _hero_sentence(score, events) -> tuple[str, str]:
     n_risk    = sum(1 for e in (events or []) if e.severity == "danger")
     n_caution = sum(1 for e in (events or []) if e.severity == "caution")
 
-    # ─ Hero sentence — voice changes with score bracket
+    if prior is not None:
+        return _hero_with_history(score, events, prior,
+                                  overall, focus, n_total, n_risk, n_caution)
+
+    # ─── First analysis ever — no prior to compare against ───
     if overall >= 88 and n_risk == 0:
         hero = "오늘 주행, <em>정말 안정적</em>이었어요."
     elif overall >= 75:
@@ -939,17 +1035,113 @@ def _hero_sentence(score, events) -> tuple[str, str]:
         else:
             hero = "오늘은 평소보다 <em>거친 주행</em>이었어요."
 
-    # ─ Secondary — what we found
+    # First analysis — set the expectation that comparison starts next time
     if n_total == 0:
-        secondary = "큰 위험 없이 부드럽게 흘러갔어요."
+        secondary = "큰 위험 없이 부드럽게 흘러갔어요. 다음 주행부터 비교가 시작됩니다."
     elif n_risk > 0:
-        secondary = f"총 {n_total}건의 핵심 순간, 그 중 {n_risk}건이 위험 구간이었어요."
+        secondary = (f"총 {n_total}건의 핵심 순간, 그 중 {n_risk}건이 위험 구간이었어요. "
+                     f"다음 주행과 비교해 볼게요.")
     elif n_caution > 0:
-        secondary = f"총 {n_total}건의 핵심 순간, {n_caution}건이 주의가 필요했어요."
+        secondary = (f"총 {n_total}건의 핵심 순간, {n_caution}건이 주의가 필요했어요. "
+                     f"다음 주행과 비교해 볼게요.")
     else:
-        secondary = f"총 {n_total}건의 핵심 순간이 있었어요."
+        secondary = f"총 {n_total}건의 핵심 순간이 있었어요. 다음 주행과 비교해 볼게요."
 
     return (hero, secondary)
+
+
+def _hero_with_history(score, events, prior,
+                       overall: int, focus, n_total: int,
+                       n_risk: int, n_caution: int) -> tuple[str, str]:
+    """Coach-mode hero — picks the story that best describes how *this* drive
+    differs from the previous one. Priority order:
+      1. Same focus area as last time → "지난번에 얘기한 X, 이번에도…"  ← the moment
+      2. Score jumped or fell meaningfully → "지난번보다 +/-N점, …"
+      3. Otherwise → neutral status line referencing prior
+    """
+    prior_score = prior.score.total
+    delta = overall - prior_score
+    prior_focus = prior.score.focus_area
+    now_cats = _count_by_category(events)
+    prior_cats = _count_by_category(prior.events)
+
+    same_focus = (focus is not None and prior_focus is not None
+                  and focus.name_ko == prior_focus.name_ko)
+    ko2key = _name_ko_to_key()
+
+    # ── 1. Same weakness twice in a row — strongest "I remember" beat ──
+    if same_focus and focus is not None:
+        key = ko2key.get(focus.name_ko, "")
+        now_n = now_cats.get(key, 0)
+        prior_n = prior_cats.get(key, 0)
+        if now_n and prior_n and now_n < prior_n:
+            hero = (f"지난번에 얘기한 <em>{focus.name_ko}</em>,<br/>"
+                    f"이번엔 {prior_n}건 → {now_n}건으로 좋아졌어요.")
+        elif now_n and prior_n and now_n > prior_n:
+            hero = (f"지난번에도 <em>{focus.name_ko}</em>가 이슈였는데,<br/>"
+                    f"이번엔 더 자주 나왔어요 ({prior_n} → {now_n}건).")
+        else:
+            hero = (f"지난번에도 같은 패턴이 보였어요.<br/>"
+                    f"<em>{focus.name_ko}</em>를 한 번 더 신경 써 볼 시간이에요.")
+        secondary = _secondary_with_delta(delta, n_total, n_risk, n_caution)
+        return (hero, secondary)
+
+    # ── 2. Prior focus area cleared this run — meaningful win.
+    #    Only celebrate when overall score didn't tank; otherwise the user
+    #    sees "한 번도 안 나왔어요" next to a falling number and gets confused.
+    if (prior_focus is not None
+            and (focus is None or focus.name_ko != prior_focus.name_ko)
+            and delta >= -2):
+        prior_key = ko2key.get(prior_focus.name_ko, "")
+        prior_n = prior_cats.get(prior_key, 0)
+        now_n = now_cats.get(prior_key, 0)
+        if now_n == 0 and prior_n > 0:
+            hero = (f"지난번 가장 큰 이슈였던 <em>{prior_focus.name_ko}</em>,<br/>"
+                    f"오늘은 한 번도 나오지 않았어요.")
+            secondary = _secondary_with_delta(delta, n_total, n_risk, n_caution)
+            return (hero, secondary)
+
+    # ── 3. Score moved meaningfully (±3 or more) ──
+    if delta >= 3:
+        if focus:
+            hero = (f"지난번보다 <em>+{delta}점</em>.<br/>"
+                    f"다음엔 {focus.name_ko}만 손보면 더 좋을 것 같아요.")
+        else:
+            hero = f"지난번보다 <em>+{delta}점</em>,<br/>전반적으로 안정적이었어요."
+    elif delta <= -3:
+        if focus:
+            hero = (f"지난번보다 <em>{delta}점</em>.<br/>"
+                    f"오늘은 <em>{focus.name_ko}</em>에서 아쉬웠어요.")
+        else:
+            hero = f"지난번보다 <em>{delta}점</em>,<br/>오늘은 평소만큼은 아니었어요."
+    else:
+        # ── 4. Score essentially flat — describe state but acknowledge history
+        if overall >= 88 and n_risk == 0:
+            hero = f"지난번과 비슷하게 <em>안정적</em>이었어요."
+        elif focus:
+            hero = (f"비슷한 점수, 같은 톤의 주행이에요.<br/>"
+                    f"<em>{focus.name_ko}</em>에서 조금 더 여유를 가져 보세요.")
+        else:
+            hero = "지난번과 비슷한 흐름으로 안정적이었어요."
+
+    secondary = _secondary_with_delta(delta, n_total, n_risk, n_caution)
+    return (hero, secondary)
+
+
+def _secondary_with_delta(delta: int, n_total: int,
+                          n_risk: int, n_caution: int) -> str:
+    """One-liner under the hero — what we found, with a quick history tag."""
+    sign = "+" if delta > 0 else ""
+    delta_str = f"점수 변화 {sign}{delta}점" if delta != 0 else "점수 변화 없음"
+    if n_total == 0:
+        return f"이번엔 큰 위험 없이 부드럽게 흘러갔어요 · {delta_str}."
+    if n_risk > 0:
+        return (f"총 {n_total}건의 핵심 순간, 그 중 {n_risk}건이 위험 구간이었어요 · "
+                f"{delta_str}.")
+    if n_caution > 0:
+        return (f"총 {n_total}건의 핵심 순간, {n_caution}건이 주의가 필요했어요 · "
+                f"{delta_str}.")
+    return f"총 {n_total}건의 핵심 순간이 있었어요 · {delta_str}."
 
 
 _SEVERITY_TO_BADGE = {
@@ -1041,6 +1233,29 @@ def _category_bars_html(score) -> str:
     return "".join(rows)
 
 
+def _score_delta_html(score, prior) -> str:
+    """Small chip under the big score number — '+3 vs 지난 주행' / '−2 vs 지난 주행'
+    / '첫 분석' when there's no prior. Empty string if no score either."""
+    if not score:
+        return ""
+    if prior is None:
+        return ('<div class="results-score-delta first">'
+                '첫 분석 · 다음부터 비교 시작'
+                '</div>')
+    delta = score.total - prior.score.total
+    if delta > 0:
+        cls, arrow, n = "up", "▲", delta
+    elif delta < 0:
+        cls, arrow, n = "down", "▼", -delta
+    else:
+        cls, arrow, n = "flat", "·", 0
+    label = "변화 없음" if delta == 0 else f"{arrow} {n}점"
+    return (f'<div class="results-score-delta {cls}">'
+            f'<span class="delta-n">{label}</span>'
+            f'<span class="delta-l">vs 지난 주행</span>'
+            f'</div>')
+
+
 def results_screen_html(
     video_path: str = "",
     filename: str = "",
@@ -1050,15 +1265,21 @@ def results_screen_html(
     coachings=None,
     event_stills: dict | None = None,
     session_id: str = "—",
+    prior=None,
 ) -> str:
     """The cinematic RESULTS finale — one HTML blob in v4 tone.
 
     Sections, top to bottom:
       nav · stepper (all done) · hero sentence + score · timeline ·
       key-moment cards · annotated video · category breakdown · CTA · footer.
+
+    `prior`: most recent past AnalysisRecord (from core.history.load_prior).
+    When set, the hero sentence and score area both reference it — turning
+    the report from a one-shot scorecard into a longitudinal coaching beat.
     """
-    hero, secondary = _hero_sentence(score, events)
+    hero, secondary = _hero_sentence(score, events, prior=prior)
     score_comment = _score_comment(score)
+    delta_html = _score_delta_html(score, prior)
     overall = score.total if score else 0
     grade = score.grade if score else "—"
     safe_name = filename or "주행 영상"
@@ -1143,6 +1364,7 @@ def results_screen_html(
     </div>
     <div class="results-hero-score">
       <div class="results-score-num">{overall}<span class="results-score-unit">/100</span></div>
+      {delta_html}
       <div class="results-score-comment">{score_comment}</div>
       <div class="results-score-grade">GRADE · <b>{grade}</b></div>
     </div>
@@ -1184,8 +1406,311 @@ def results_screen_html(
 """
 
 
-# Legacy stub — kept so existing imports keep resolving.
-RESULTS_HEADER_HTML = ""
+# ─── HISTORY — '내 주행 기록' page ────────────────────────────
+# Shows past analyses as a list, plus a sparkline of the score trend and
+# the top-3 repeated event categories across all drives. The data comes
+# from `core.history.load_recent()` — list[AnalysisRecord]. When there are
+# 0 records the page falls back to an empty-state with an upload CTA.
+
+from datetime import datetime as _dt
+
+
+def _relative_date(iso_ts: str) -> str:
+    """ISO timestamp → human-friendly Korean relative date."""
+    try:
+        then = _dt.fromisoformat(iso_ts)
+    except (TypeError, ValueError):
+        return iso_ts or "—"
+    diff = _dt.now() - then
+    days = diff.days
+    if days < 0:
+        return then.strftime("%Y.%m.%d")
+    if days == 0:
+        hours = diff.seconds // 3600
+        if hours <= 0:
+            return "방금 전"
+        return f"{hours}시간 전"
+    if days == 1:
+        return "어제"
+    if days < 7:
+        return f"{days}일 전"
+    if days < 28:
+        return f"{days // 7}주 전"
+    return then.strftime("%Y.%m.%d")
+
+
+def _sparkline_svg(scores: list[int], w: int = 1000, h: int = 120) -> str:
+    """SVG line chart for the score trend. Auto-scales Y to a tight range so
+    visit-to-visit changes are visible (otherwise an 85→92 jump on a 0-100
+    axis would look almost flat)."""
+    if len(scores) < 2:
+        return ""
+    pad_x, pad_y = 12, 14
+    lo, hi = min(scores), max(scores)
+    span = max(8, hi - lo)  # never tighter than 8pts for visual breathing room
+    lo = max(0, (lo + hi - span) // 2)
+    hi = min(100, lo + span)
+    span = hi - lo
+    inner_w = w - 2 * pad_x
+    inner_h = h - 2 * pad_y
+
+    pts: list[tuple[float, float]] = []
+    n = len(scores)
+    for i, s in enumerate(scores):
+        x = pad_x + (i / (n - 1)) * inner_w
+        y = pad_y + (1 - (s - lo) / span) * inner_h
+        pts.append((x, y))
+
+    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
+    area = (f"M {pts[0][0]:.1f} {h - pad_y}"
+            + " L " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
+            + f" L {pts[-1][0]:.1f} {h - pad_y} Z")
+    dots = "".join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" class="dot"/>'
+        for x, y in pts
+    )
+    # Highlight the latest point with a bigger ring
+    lx, ly = pts[-1]
+    return f"""
+    <svg class="history-sparkline" viewBox="0 0 {w} {h}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="dcv3-sparkfill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(0,229,154,0.18)"/>
+          <stop offset="100%" stop-color="rgba(0,229,154,0)"/>
+        </linearGradient>
+      </defs>
+      <path class="area" d="{area}"/>
+      <path class="line" d="{path}"/>
+      {dots}
+      <circle cx="{lx:.1f}" cy="{ly:.1f}" r="6" class="dot-latest-halo"/>
+      <circle cx="{lx:.1f}" cy="{ly:.1f}" r="4" class="dot-latest"/>
+    </svg>
+    """
+
+
+def _aggregate_patterns(records) -> list[tuple[str, int, int]]:
+    """Across all records, return (category_ko, total_event_count, drives_with_it)
+    sorted by total events desc. Used by the 'repeated patterns' Top 3 section."""
+    from core.schema import SCORE_CATEGORY_DEFS
+    key_to_ko = {key: ko for key, _en, ko, _icon in SCORE_CATEGORY_DEFS}
+    totals: dict[str, int] = {}
+    drives: dict[str, int] = {}
+    for rec in records:
+        seen: set[str] = set()
+        for ev in rec.events:
+            totals[ev.category] = totals.get(ev.category, 0) + 1
+            seen.add(ev.category)
+        for cat in seen:
+            drives[cat] = drives.get(cat, 0) + 1
+    rows = [(key_to_ko.get(k, k), totals[k], drives.get(k, 0))
+            for k in totals]
+    rows.sort(key=lambda r: (-r[1], -r[2]))
+    return rows
+
+
+def _history_card_html(record, idx_in_list: int, total: int) -> str:
+    """One card per past analysis. Shows score, focus area, event count, and
+    a relative date. Cards are read-only for now — click-to-drill is a Week-3
+    nice-to-have."""
+    score = record.score
+    focus = score.focus_area
+    n_events = len(record.events)
+    n_risk = sum(1 for e in record.events if e.severity == "danger")
+    rel = _relative_date(record.analyzed_at)
+    # ordinal: list is newest-first, so total - idx_in_list = "N번째 분석"
+    nth = total - idx_in_list
+    focus_html = (f'<span class="history-card-focus"><span class="k">FOCUS</span>'
+                  f'<span class="v">{focus.name_ko}</span></span>')\
+                 if focus else (
+                  '<span class="history-card-focus"><span class="k">FOCUS</span>'
+                  '<span class="v" style="color:var(--signal)">없음</span></span>')
+    risk_dot = ('<span class="history-card-risk"></span>'
+                if n_risk > 0 else '')
+    return f"""
+    <article class="history-card">
+      <div class="history-card-head">
+        <span class="history-card-nth">#{nth:02d}</span>
+        <span class="history-card-date">{rel}</span>
+      </div>
+      <div class="history-card-score">
+        <span class="num">{score.total}</span>
+        <span class="unit">/100</span>
+        <span class="grade">{score.grade}</span>
+      </div>
+      <div class="history-card-name" title="{record.video_name}">
+        {record.video_name or '주행 영상'}
+      </div>
+      <div class="history-card-meta">
+        {focus_html}
+        <span class="history-card-events">
+          <span class="k">EVENTS</span>
+          <span class="v">{n_events}{risk_dot}</span>
+        </span>
+      </div>
+    </article>
+    """
+
+
+def _pattern_card_html(rank: int, name_ko: str, total: int,
+                       drives: int, n_records: int) -> str:
+    """One pattern card — 'X가 N건, 전체 주행의 M%에서 반복'."""
+    pct = round(drives / n_records * 100) if n_records else 0
+    return f"""
+    <article class="history-pattern-card">
+      <span class="history-pattern-rank">TOP {rank}</span>
+      <h4>{name_ko}</h4>
+      <div class="history-pattern-stats">
+        <div class="ps">
+          <span class="ps-n">{total}</span>
+          <span class="ps-l">총 발생</span>
+        </div>
+        <div class="ps">
+          <span class="ps-n">{pct}<small>%</small></span>
+          <span class="ps-l">의 주행에서</span>
+        </div>
+      </div>
+    </article>
+    """
+
+
+def history_screen_html(records=None, session_id: str = "—") -> str:
+    """The '내 주행 기록' page — list of past analyses, score trend sparkline,
+    repeated-pattern Top 3. Falls back to an empty-state when records is empty."""
+    records = list(records or [])
+    n = len(records)
+
+    if n == 0:
+        return f"""
+<div class="dc-v3-root history-root">
+  <nav class="ready-nav">
+    <a class="brand" href="#dc-top" aria-label="DrivingAssis">
+      <span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>
+      <span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>
+    </a>
+    <div class="ready-nav-right">
+      <span class="ready-session">MY HISTORY</span>
+    </div>
+  </nav>
+
+  <section class="history-empty">
+    <div class="history-empty-icon">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="6" y="10" width="36" height="30" rx="2"/>
+        <path d="M6 18h36"/>
+        <path d="M14 6v8M34 6v8"/>
+      </svg>
+    </div>
+    <h1>아직 분석한 주행이 없어요.</h1>
+    <p>첫 영상을 분석하면, 다음 주행부터<br/>이 자리에 패턴과 변화가 쌓입니다.</p>
+    <button class="ready-btn-go" type="button" id="history-upload-btn">
+      첫 영상 업로드 {_arrow_go_svg()}
+    </button>
+  </section>
+
+  <footer class="ready-foot">© 2026 DRIVINGASSIS · MY HISTORY</footer>
+</div>
+"""
+
+    # ── Non-empty: sparkline + patterns + card grid ──
+    # Sparkline takes scores oldest-to-newest (left-to-right = time forward)
+    scores_chrono = [r.score.total for r in reversed(records)]
+    spark = _sparkline_svg(scores_chrono) if len(scores_chrono) >= 2 else (
+        '<div class="history-sparkline-empty">'
+        '두 번째 분석부터 점수 추이가 그려집니다.</div>'
+    )
+
+    latest = records[0].score.total
+    oldest = records[-1].score.total
+    delta_all = latest - oldest
+
+    patterns = _aggregate_patterns(records)[:3]
+    if patterns:
+        pat_html = "".join(
+            _pattern_card_html(i + 1, ko, total, drives, n)
+            for i, (ko, total, drives) in enumerate(patterns)
+        )
+    else:
+        pat_html = ('<div class="history-pattern-empty">'
+                    '반복되는 패턴이 아직 없어요. 깨끗한 주행이 이어지고 있다는 뜻이에요.</div>')
+
+    cards = "".join(_history_card_html(r, i, n) for i, r in enumerate(records))
+
+    delta_summary = ""
+    if len(records) >= 2:
+        sign = "+" if delta_all > 0 else ""
+        delta_summary = (f'<div class="history-trend-delta">'
+                         f'<span class="k">처음 분석 대비</span>'
+                         f'<span class="v {"up" if delta_all >= 0 else "down"}">'
+                         f'{sign}{delta_all}점</span></div>')
+
+    return f"""
+<div class="dc-v3-root history-root">
+
+  <nav class="ready-nav">
+    <a class="brand" href="#dc-top" aria-label="DrivingAssis">
+      <span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>
+      <span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>
+    </a>
+    <div class="ready-nav-right">
+      <span class="ready-session">MY HISTORY · {n}건</span>
+    </div>
+  </nav>
+
+  <section class="history-header">
+    <span class="label label-signal">My Drive History · 내 주행 기록</span>
+    <h1>
+      지금까지 <em>{n}건</em>의 분석.<br/>
+      <span class="em">당신의 패턴이 보이기 시작합니다.</span>
+    </h1>
+  </section>
+
+  <section class="history-trend-wrap">
+    <div class="history-section-head">
+      <span class="label label-signal">Trend · 점수 추이</span>
+      <h3>시간을 따라 본 오늘까지의 흐름.</h3>
+    </div>
+    <div class="history-trend-card">
+      {spark}
+      <div class="history-trend-foot">
+        <span class="k">처음</span><span class="v">{oldest}</span>
+        <span class="sep">→</span>
+        <span class="k">최근</span><span class="v">{latest}</span>
+        {delta_summary}
+      </div>
+    </div>
+  </section>
+
+  <section class="history-patterns-wrap">
+    <div class="history-section-head">
+      <span class="label label-signal">Repeated · 반복 패턴</span>
+      <h3>당신이 가장 자주 만나는 순간 Top 3.</h3>
+    </div>
+    <div class="history-pattern-grid">
+      {pat_html}
+    </div>
+  </section>
+
+  <section class="history-list-wrap">
+    <div class="history-section-head">
+      <span class="label label-signal">All Reports · 전체 분석</span>
+      <h3>지난 분석들, 최근 순서로.</h3>
+    </div>
+    <div class="history-grid">
+      {cards}
+    </div>
+  </section>
+
+  <section class="history-cta">
+    <button class="ready-btn-go" type="button" id="history-upload-btn">
+      새 영상 분석하기 {_arrow_go_svg()}
+    </button>
+  </section>
+
+  <footer class="ready-foot">© 2026 DRIVINGASSIS · MY HISTORY · {n}건</footer>
+
+</div>
+"""
 
 
 # ─── Always-on header / footer for non-IDLE screens ───────────

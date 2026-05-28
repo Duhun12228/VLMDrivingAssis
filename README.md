@@ -8,7 +8,7 @@
 
 ---
 
-## 빠른 시작
+## 빠른 시작    
 
 ```bash
 pip install -r requirements.txt
