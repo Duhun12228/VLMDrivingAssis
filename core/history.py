@@ -142,6 +142,27 @@ def load_recent(limit: int = 10) -> list[AnalysisRecord]:
     return out
 
 
+def delete_analysis(session_id: str) -> bool:
+    """Remove every history file whose session_id matches. Returns True if at
+    least one file was deleted. Used by the visible × on each history card —
+    silently no-ops if the session is already gone."""
+    if not session_id:
+        return False
+    removed = False
+    for p in _list_files():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("session_id") == session_id:
+            try:
+                p.unlink()
+                removed = True
+            except OSError:
+                pass
+    return removed
+
+
 def load_prior(exclude_session_id: str | None = None) -> AnalysisRecord | None:
     """The most recent analysis, optionally skipping a given session id.
 

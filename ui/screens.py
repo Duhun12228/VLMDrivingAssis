@@ -403,26 +403,21 @@ def _numbers_section() -> str:
     <section class="numbers" id="dc-numbers">
       <div class="numbers-head">
         <span class="label label-signal">What we detect</span>
-        <h2 data-reveal>리포트가 짚어주는<br/><em>네 가지 순간.</em></h2>
+        <h2 data-reveal>리포트가 짚어주는<br/><em>세 가지 순간.</em></h2>
       </div>
       <div class="numbers-grid">
         <div class="num" data-reveal>
           <div class="l">Event · 01</div>
-          <div class="v" style="{big}">급제동</div>
-          <div class="d">앞 차량 감속·보행자 진입 등으로 짧은 시간에 큰 감속이 발생한 구간을 찾습니다.</div>
-        </div>
-        <div class="num" data-reveal style="--rd:120ms">
-          <div class="l">Event · 02</div>
           <div class="v" style="{big}">차선 이탈</div>
           <div class="d">방향지시등 없이 차선을 넘어가거나, 차선 안에서 좌우 흔들림이 큰 구간을 표시합니다.</div>
         </div>
-        <div class="num" data-reveal style="--rd:240ms">
-          <div class="l">Event · 03</div>
+        <div class="num" data-reveal style="--rd:120ms">
+          <div class="l">Event · 02</div>
           <div class="v" style="{big}">차간거리 부족</div>
           <div class="d">앞 차량과의 시간 간격이 권장 수준 아래로 떨어져 지속된 구간을 따로 모아 보여드립니다.</div>
         </div>
-        <div class="num" data-reveal style="--rd:360ms">
-          <div class="l">Event · 04</div>
+        <div class="num" data-reveal style="--rd:240ms">
+          <div class="l">Event · 03</div>
           <div class="v" style="{big}">신호·정지선</div>
           <div class="d">신호 전환 시점의 정지·통과 결정과 정지선 위치를 함께 기록합니다.</div>
         </div>
@@ -1528,6 +1523,15 @@ def _history_card_html(record, idx_in_list: int, total: int) -> str:
                 if n_risk > 0 else '')
     return f"""
     <article class="history-card">
+      <button class="history-card-del" type="button"
+              data-session-id="{record.session_id}"
+              data-nth="{nth:02d}"
+              aria-label="이 분석 삭제">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+             stroke-width="1.6" stroke-linecap="round">
+          <path d="M3 3 L13 13 M13 3 L3 13"/>
+        </svg>
+      </button>
       <div class="history-card-head">
         <span class="history-card-nth">#{nth:02d}</span>
         <span class="history-card-date">{rel}</span>

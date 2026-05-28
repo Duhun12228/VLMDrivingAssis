@@ -25,7 +25,7 @@ import gradio as gr
 
 from core.detector import detect_video_stream
 from core.event_extractor import extract_events
-from core.history import load_prior, load_recent, save_analysis
+from core.history import delete_analysis, load_prior, load_recent, save_analysis
 from core.overlay import render_annotated_video
 from core.scorer import calculate_score
 from core.video_utils import normalize_for_browser
@@ -151,6 +151,46 @@ DC_BOOT_JS = """
         document.querySelector('.dc-home-hit')?.click();
       });
     }
+
+    // --- 3e. HISTORY card × button → confirm + delete bridge ---
+    // Each .history-card-del carries data-session-id. We confirm, fill the
+    // hidden Textbox (#dc-history-delete-target) with that id, fire 'input'
+    // so Svelte picks it up, then click the hidden gr.Button which calls
+    // go_history_delete() server-side. The handler re-renders history_html
+    // so the card disappears in place.
+    document.querySelectorAll('.history-card-del').forEach(btn => {
+      if (btn.__bound) return;
+      btn.__bound = true;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        e.preventDefault();
+        const sid = btn.dataset.sessionId || '';
+        const nth = btn.dataset.nth || '';
+        if (!sid) return;
+        if (!confirm(`#${nth} 분석을 삭제할까요?\\n되돌릴 수 없습니다.`)) return;
+        const target = document.querySelector(
+          '#dc-history-delete-target textarea, ' +
+          '#dc-history-delete-target input'
+        );
+        if (!target) {
+          console.warn('[DC] delete target textbox not found');
+          return;
+        }
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          target.tagName === 'TEXTAREA'
+            ? window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        if (nativeSetter) nativeSetter.call(target, sid);
+        else target.value = sid;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        // Give Svelte one tick to commit the value before clicking the btn
+        setTimeout(() => {
+          document.querySelector('.dc-history-delete-hit')?.click();
+        }, 40);
+      });
+    });
 
     // --- 3c. HISTORY navigation bridges ---
     // The visible '기록' link in the IDLE nav → hidden gr.Button which calls
@@ -515,6 +555,19 @@ def go_history():
     )
 
 
+def go_history_delete(target_session_id: str):
+    """Delete the history record with the given session id, then re-render
+    the HISTORY page in place. The target id comes from a hidden textbox
+    that DC_BOOT_JS fills before triggering this. Stays on HISTORY screen
+    (no visibility change) but refreshes the html so the card is gone."""
+    delete_analysis((target_session_id or "").strip())
+    records = load_recent(limit=20)
+    return (
+        history_screen_html(records=records),  # history_html
+        "",                                    # clear delete_target textbox
+    )
+
+
 def on_file_uploaded(file_obj, progress=gr.Progress()):
     """IDLE → UPLOADED. Normalize to browser-safe mp4 and build the Ready screen."""
     if file_obj is None:
@@ -755,6 +808,18 @@ def build_app() -> gr.Blocks:
         home_btn = gr.Button("home", elem_classes="dc-home-hit")
         with gr.Group(elem_classes="dc-hidden-actions"):
             history_btn = gr.Button("history", elem_classes="dc-history-hit")
+            # Carries the session_id JS just clicked × on. Read by go_history_delete.
+            # Must be visible=True so Gradio actually mounts it — the enclosing
+            # .dc-hidden-actions wrapper positions it off-screen anyway. With
+            # visible=False the component never renders and elem_id is unused.
+            history_delete_target = gr.Textbox(
+                value="", visible=True, interactive=True,
+                elem_id="dc-history-delete-target",
+                label=None, container=False, show_label=False,
+            )
+            history_delete_btn = gr.Button(
+                "history-delete", elem_classes="dc-history-delete-hit",
+            )
 
         # State variable — currently unused (visibility drives everything),
         # but exposed in case we need to react to it from JS later.
@@ -832,36 +897,58 @@ def build_app() -> gr.Blocks:
             history_screen, history_html,
         ]
 
+        # All transitions opt out of Gradio's built-in "processing | N.Ns"
+        # status indicator that floats top-right; our own ANALYZING screen
+        # carries the only progress UI the user should see. (Gradio 6 calls
+        # this `show_progress="hidden"` per-listener.)
+
         # IDLE → UPLOADED
         file_in.upload(fn=on_file_uploaded, inputs=[file_in],
-                       outputs=upload_outputs)
+                       outputs=upload_outputs, show_progress="hidden")
 
         # UPLOADED → IDLE
-        back_btn.click(fn=go_idle, outputs=screen_outputs)
+        back_btn.click(fn=go_idle, outputs=screen_outputs,
+                       show_progress="hidden")
 
         # UPLOADED → ANALYZING → RESULTS
         analyze_btn.click(
             fn=go_analyzing,
             inputs=[video_state],
             outputs=[uploaded_screen, analyzing_screen, analyzing_html, analyz_state],
+            show_progress="hidden",
         ).then(
             fn=run_analysis,
             inputs=[video_state, analyz_state],
             outputs=[analyzing_html, results_html],
+            show_progress="hidden",
         ).then(
             fn=go_results,
             outputs=[analyzing_screen, results_screen],
+            show_progress="hidden",
         )
 
         # RESULTS → IDLE
-        new_analysis_btn.click(fn=go_idle, outputs=screen_outputs)
+        new_analysis_btn.click(fn=go_idle, outputs=screen_outputs,
+                               show_progress="hidden")
 
         # Any → HISTORY (triggered by visible "기록" link in IDLE nav,
         # bridged by DC_BOOT_JS to this hidden button)
-        history_btn.click(fn=go_history, outputs=history_outputs)
+        history_btn.click(fn=go_history, outputs=history_outputs,
+                          show_progress="hidden")
+
+        # × on a history card → delete that record + re-render the page.
+        # DC_BOOT_JS sets the hidden Textbox value to the session_id, then
+        # clicks this hidden button; we read the textbox and act.
+        history_delete_btn.click(
+            fn=go_history_delete,
+            inputs=[history_delete_target],
+            outputs=[history_html, history_delete_target],
+            show_progress="hidden",
+        )
 
         # Header brand → IDLE (from any screen)
-        home_btn.click(fn=go_idle, outputs=screen_outputs)
+        home_btn.click(fn=go_idle, outputs=screen_outputs,
+                       show_progress="hidden")
 
     return app
 
