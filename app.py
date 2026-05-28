@@ -202,13 +202,63 @@ DC_BOOT_JS = """
       });
     }
 
+    // --- 3g. HISTORY node card → drill in (re-show past RESULTS) ---
+    // Each .node-card carries data-session-id. Click anywhere on the card
+    // (except on the × delete button) → fill hidden Textbox + click hidden
+    // gr.Button → go_history_drilldown() server-side navigates to RESULTS
+    // with that record's data.
+    function fillTextboxAndClick(targetSelector, btnSelector, value) {
+      const target = document.querySelector(
+        targetSelector + ' textarea, ' + targetSelector + ' input'
+      );
+      if (!target) {
+        console.warn('[DC] textbox not found:', targetSelector);
+        return;
+      }
+      const proto = target.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(target, value);
+      else target.value = value;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      setTimeout(() => document.querySelector(btnSelector)?.click(), 40);
+    }
+    document.querySelectorAll('.node-card').forEach(card => {
+      if (card.__bound) return;
+      card.__bound = true;
+      card.addEventListener('click', e => {
+        // Don't fire when the user clicked the × delete button
+        if (e.target.closest('.nc-del')) return;
+        const sid = card.dataset.sessionId || '';
+        if (!sid) return;
+        fillTextboxAndClick(
+          '#dc-history-drill-target',
+          '.dc-history-drill-hit',
+          sid
+        );
+      });
+      // Keyboard activation (Enter / Space) since card has role="button"
+      card.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        const sid = card.dataset.sessionId || '';
+        if (!sid) return;
+        fillTextboxAndClick(
+          '#dc-history-drill-target',
+          '.dc-history-drill-hit',
+          sid
+        );
+      });
+    });
+
     // --- 3e. HISTORY card × button → confirm + delete bridge ---
-    // Each .history-card-del carries data-session-id. We confirm, fill the
-    // hidden Textbox (#dc-history-delete-target) with that id, fire 'input'
-    // so Svelte picks it up, then click the hidden gr.Button which calls
-    // go_history_delete() server-side. The handler re-renders history_html
-    // so the card disappears in place.
-    document.querySelectorAll('.history-card-del').forEach(btn => {
+    // Each .nc-del (v6) or .history-card-del (legacy) carries data-session-id.
+    // We confirm, fill the hidden Textbox (#dc-history-delete-target) with
+    // that id, fire 'input' so Svelte picks it up, then click the hidden
+    // gr.Button which calls go_history_delete() server-side. The handler
+    // re-renders history_html so the card disappears in place.
+    document.querySelectorAll('.history-card-del, .nc-del').forEach(btn => {
       if (btn.__bound) return;
       btn.__bound = true;
       btn.addEventListener('click', e => {
@@ -217,7 +267,8 @@ DC_BOOT_JS = """
         const sid = btn.dataset.sessionId || '';
         const nth = btn.dataset.nth || '';
         if (!sid) return;
-        if (!confirm(`#${nth} 분석을 삭제할까요?\\n되돌릴 수 없습니다.`)) return;
+        const label = nth && nth !== sid ? `#${nth} 분석` : '이 분석';
+        if (!confirm(`${label}을 삭제할까요?\\n되돌릴 수 없습니다.`)) return;
         const target = document.querySelector(
           '#dc-history-delete-target textarea, ' +
           '#dc-history-delete-target input'
@@ -618,6 +669,58 @@ def go_history_delete(target_session_id: str):
     )
 
 
+def go_history_drilldown(target_session_id: str):
+    """HISTORY card click → re-show that past analysis as RESULTS.
+
+    Looks up the record by session id, computes its prior (the analysis
+    chronologically just before it), and re-renders results_screen_html
+    with that data. Video path + event stills are empty (those temp files
+    are long gone) — results_screen_html already handles that gracefully
+    (no video block, fallback divs on cards). Stepper still shows all-done.
+    """
+    sid = (target_session_id or "").strip()
+    records = load_recent(limit=99)
+    target = next((r for r in records if r.session_id == sid), None)
+    if target is None:
+        # Record vanished (e.g. user deleted in another tab) — just re-render
+        # HISTORY in place and don't navigate.
+        return (
+            gr.update(),                                # idle (no change)
+            gr.update(),                                # uploaded
+            gr.update(),                                # analyzing
+            gr.update(),                                # results
+            gr.update(),                                # history (stay)
+            history_screen_html(records=records),       # history_html refresh
+            gr.update(),                                # results_html
+            "",                                         # clear drill textbox
+        )
+    # Find prior: record immediately older (records is newest-first)
+    idx = records.index(target)
+    prior = records[idx + 1] if idx + 1 < len(records) else None
+
+    html = results_screen_html(
+        video_path="",                # annotated video file is long gone
+        filename=target.video_name,
+        duration=target.duration,
+        score=target.score,
+        events=target.events,
+        coachings=target.coachings,
+        event_stills={},              # event stills were temp jpgs, also gone
+        session_id=target.session_id,
+        prior=prior,
+    )
+    return (
+        gr.update(visible=False),     # idle
+        gr.update(visible=False),     # uploaded
+        gr.update(visible=False),     # analyzing
+        gr.update(visible=True),      # results ← navigate here
+        gr.update(visible=False),     # history
+        gr.update(),                  # history_html (no change needed)
+        html,                         # results_html ← past analysis
+        "",                           # clear drill textbox
+    )
+
+
 def on_file_uploaded(file_obj, progress=gr.Progress()):
     """IDLE → UPLOADED. Normalize to browser-safe mp4 and build the Ready screen."""
     if file_obj is None:
@@ -870,6 +973,17 @@ def build_app() -> gr.Blocks:
             history_delete_btn = gr.Button(
                 "history-delete", elem_classes="dc-history-delete-hit",
             )
+            # Carries the session_id JS just clicked a node card on. Read
+            # by go_history_drilldown to navigate HISTORY → RESULTS for
+            # that record.
+            history_drill_target = gr.Textbox(
+                value="", visible=True, interactive=True,
+                elem_id="dc-history-drill-target",
+                label=None, container=False, show_label=False,
+            )
+            history_drill_btn = gr.Button(
+                "history-drill", elem_classes="dc-history-drill-hit",
+            )
 
         # State variable — currently unused (visibility drives everything),
         # but exposed in case we need to react to it from JS later.
@@ -993,6 +1107,18 @@ def build_app() -> gr.Blocks:
             fn=go_history_delete,
             inputs=[history_delete_target],
             outputs=[history_html, history_delete_target],
+            show_progress="hidden",
+        )
+
+        # Click on a node card → drill in to that past analysis (RESULTS).
+        history_drill_btn.click(
+            fn=go_history_drilldown,
+            inputs=[history_drill_target],
+            outputs=[
+                idle_screen, uploaded_screen, analyzing_screen, results_screen,
+                history_screen,
+                history_html, results_html, history_drill_target,
+            ],
             show_progress="hidden",
         )
 

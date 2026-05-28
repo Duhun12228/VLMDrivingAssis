@@ -1635,17 +1635,23 @@ def results_screen_html(
 """
 
 
-# ─── HISTORY — '내 주행 기록' page ────────────────────────────
-# Shows past analyses as a list, plus a sparkline of the score trend and
-# the top-3 repeated event categories across all drives. The data comes
-# from `core.history.load_recent()` — list[AnalysisRecord]. When there are
-# 0 records the page falls back to an empty-state with an upload CTA.
+# ─── HISTORY — v6 SPINE redesign ─────────────────────────────
+# Soul: not a dashboard. A single vertical spine (운전 여정). Each analysis
+# is a node on the spine; the gap between adjacent nodes carries the
+# narrative of what improved or kept repeating. Milestones glow on the
+# spine. The structure itself proves "기억하는 코치".
+#
+# Three states:
+#   • n == 0  → empty-state (clock icon + first-drive CTA)
+#   • n == 1  → sparse-state (one-card welcome + focus area note)
+#   • n >= 2  → full journey (overview card + milestone ribbon + spine)
 
 from datetime import datetime as _dt
 
 
 def _relative_date(iso_ts: str) -> str:
-    """ISO timestamp → human-friendly Korean relative date."""
+    """ISO timestamp → human-friendly Korean relative date.
+    Matches the design's whenLabel ranges so node copy reads natural."""
     try:
         then = _dt.fromisoformat(iso_ts)
     except (TypeError, ValueError):
@@ -1663,290 +1669,454 @@ def _relative_date(iso_ts: str) -> str:
         return "어제"
     if days < 7:
         return f"{days}일 전"
-    if days < 28:
+    if days < 14:
+        return "지난주"
+    if days < 30:
         return f"{days // 7}주 전"
+    if days < 365:
+        return f"{days // 30}개월 전"
     return then.strftime("%Y.%m.%d")
 
 
-def _sparkline_svg(scores: list[int], w: int = 1000, h: int = 120) -> str:
-    """SVG line chart for the score trend. Auto-scales Y to a tight range so
-    visit-to-visit changes are visible (otherwise an 85→92 jump on a 0-100
-    axis would look almost flat)."""
-    if len(scores) < 2:
+def _spine_sparkline_svg(scores: list[int]) -> str:
+    """Compact sparkline for the overview card.
+    Renders the score series oldest→newest left-to-right inside a 100x90
+    viewBox (CSS handles actual width); auto-scales Y so visit-to-visit
+    differences stay visible even on flat ranges."""
+    if not scores:
         return ""
-    pad_x, pad_y = 12, 14
-    lo, hi = min(scores), max(scores)
-    span = max(8, hi - lo)  # never tighter than 8pts for visual breathing room
-    lo = max(0, (lo + hi - span) // 2)
-    hi = min(100, lo + span)
-    span = hi - lo
-    inner_w = w - 2 * pad_x
-    inner_h = h - 2 * pad_y
-
-    pts: list[tuple[float, float]] = []
-    n = len(scores)
-    for i, s in enumerate(scores):
-        x = pad_x + (i / (n - 1)) * inner_w
-        y = pad_y + (1 - (s - lo) / span) * inner_h
-        pts.append((x, y))
-
-    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
-    area = (f"M {pts[0][0]:.1f} {h - pad_y}"
-            + " L " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
-            + f" L {pts[-1][0]:.1f} {h - pad_y} Z")
+    pts = scores
+    n = len(pts)
+    W, H, pad_x, pad_y = 100, 90, 4, 10
+    lo, hi = min(pts), max(pts)
+    span = max(1, hi - lo)
+    def xs(i: int) -> float:
+        if n == 1:
+            return W / 2
+        return pad_x + (W - 2 * pad_x) * (i / (n - 1))
+    def ys(v: int) -> float:
+        return pad_y + (H - 2 * pad_y) * (1 - (v - lo) / span)
+    d = ""
+    for i, v in enumerate(pts):
+        d += ("M" if i == 0 else "L") + f"{xs(i):.2f},{ys(v):.2f} "
+    area = (d + f"L{xs(n-1):.2f},{H} L{xs(0):.2f},{H} Z")
+    last_x, last_y = xs(n - 1), ys(pts[-1])
     dots = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" class="dot"/>'
-        for x, y in pts
+        f'<circle class="spark-dot{ " last" if i == n - 1 else ""}" '
+        f'cx="{xs(i):.2f}" cy="{ys(v):.2f}" r="{3 if i == n - 1 else 2}"/>'
+        for i, v in enumerate(pts)
     )
-    # Highlight the latest point with a bigger ring
-    lx, ly = pts[-1]
     return f"""
-    <svg class="history-sparkline" viewBox="0 0 {w} {h}" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="dcv3-sparkfill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="rgba(0,229,154,0.18)"/>
-          <stop offset="100%" stop-color="rgba(0,229,154,0)"/>
-        </linearGradient>
-      </defs>
-      <path class="area" d="{area}"/>
-      <path class="line" d="{path}"/>
-      {dots}
-      <circle cx="{lx:.1f}" cy="{ly:.1f}" r="6" class="dot-latest-halo"/>
-      <circle cx="{lx:.1f}" cy="{ly:.1f}" r="4" class="dot-latest"/>
-    </svg>
+      <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,229,154,0.35)"/>
+            <stop offset="100%" stop-color="rgba(0,229,154,0)"/>
+          </linearGradient>
+        </defs>
+        <path class="spark-area" d="{area.strip()}"/>
+        <path class="spark-line" d="{d.strip()}"/>
+        <circle class="spark-halo" cx="{last_x:.2f}" cy="{last_y:.2f}" r="7"/>
+        {dots}
+      </svg>
     """
 
 
-def _aggregate_patterns(records) -> list[tuple[str, int, int]]:
-    """Across all records, return (category_ko, total_event_count, drives_with_it)
-    sorted by total events desc. Used by the 'repeated patterns' Top 3 section."""
-    from core.schema import SCORE_CATEGORY_DEFS
-    key_to_ko = {key: ko for key, _en, ko, _icon in SCORE_CATEGORY_DEFS}
-    totals: dict[str, int] = {}
-    drives: dict[str, int] = {}
-    for rec in records:
-        seen: set[str] = set()
-        for ev in rec.events:
-            totals[ev.category] = totals.get(ev.category, 0) + 1
-            seen.add(ev.category)
-        for cat in seen:
-            drives[cat] = drives.get(cat, 0) + 1
-    rows = [(key_to_ko.get(k, k), totals[k], drives.get(k, 0))
-            for k in totals]
-    rows.sort(key=lambda r: (-r[1], -r[2]))
-    return rows
+# Korean short labels for focus_area (matches RESULTS breakdown short names).
+_HISTORY_CAT_SHORT = {
+    "신호 인지": "신호", "차선 준수": "차선", "보행자 주의": "보행자",
+    "속도 관리": "속도", "안전거리": "안전거리",
+}
+_HISTORY_CAT_KEY = {
+    "신호 인지": "signal", "차선 준수": "lane",
+    "보행자 주의": "pedestrian", "속도 관리": "speed",
+    "안전거리": "distance",
+}
+# Same 5 icons as RESULTS — kept here as a small standalone copy so the
+# HISTORY screen has no cross-section dependency on the RESULTS helpers.
+_HISTORY_CAT_ICONS = {
+    "signal": ('<svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2"/>'
+               '<circle cx="12" cy="8" r="1.5"/><circle cx="12" cy="13" r="1.5"/>'
+               '<circle cx="12" cy="18" r="1.5"/></svg>'),
+    "lane": ('<svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="21"/>'
+             '<line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="10" x2="12" y2="14"/>'
+             '<line x1="12" y1="18" x2="12" y2="21"/><line x1="18" y1="3" x2="18" y2="21"/></svg>'),
+    "pedestrian": ('<svg viewBox="0 0 24 24"><circle cx="12" cy="4" r="2"/>'
+                   '<path d="M12 7 v8 M12 15 l-3 6 M12 15 l3 6 M9 10 l-3 -1 M15 10 l3 -1"/></svg>'),
+    "speed": ('<svg viewBox="0 0 24 24"><path d="M4 14 a8 8 0 0 1 16 0"/>'
+              '<path d="M12 14 l4 -4"/><circle cx="12" cy="14" r="1.5"/></svg>'),
+    "distance": ('<svg viewBox="0 0 24 24"><rect x="3" y="13" width="6" height="6"/>'
+                 '<rect x="15" y="13" width="6" height="6"/>'
+                 '<line x1="9" y1="16" x2="15" y2="16" stroke-dasharray="1.5 2"/></svg>'),
+}
 
 
-def _history_card_html(record, idx_in_list: int, total: int) -> str:
-    """One card per past analysis. Shows score, focus area, event count, and
-    a relative date. Cards are read-only for now — click-to-drill is a Week-3
-    nice-to-have."""
+def _grade_cls(grade: str) -> str:
+    g = (grade or "").upper()
+    if g.startswith("A"):
+        return ""
+    if g.startswith("B"):
+        return "b"
+    if g.startswith("C"):
+        return "c"
+    return "d"
+
+
+def _gap_narrative(newer, older) -> str:
+    """One-line narrative between two adjacent records (newer above older
+    in the spine). Compares focus_area + score delta to surface 'pattern
+    repeated' vs 'focus shifted' vs 'big jump'. Uses .imp (signal green)
+    for improvements and .pat (amber) for repeated weaknesses."""
+    new_focus = newer.score.focus_area
+    old_focus = older.score.focus_area
+    new_ko = new_focus.name_ko if new_focus else None
+    old_ko = old_focus.name_ko if old_focus else None
+    d = newer.score.total - older.score.total
+    # Same focus_area on both → pattern continued
+    if new_ko and old_ko and new_ko == old_ko:
+        short = _HISTORY_CAT_SHORT.get(new_ko, new_ko)
+        if d >= 4:
+            return (f'<span class="imp">+{d}점</span> · 그래도 '
+                    f'<span class="pat">{short}</span>가 계속 약점이에요')
+        if d <= -4:
+            return (f'<span class="pat">{-d}점 하락</span> · '
+                    f'<span class="pat">{short}</span>가 반복되고 있어요')
+        return f'<span class="pat">{short}</span> 약점이 이어졌어요'
+    # Focus shifted
+    if new_ko and old_ko:
+        old_short = _HISTORY_CAT_SHORT.get(old_ko, old_ko)
+        new_short = _HISTORY_CAT_SHORT.get(new_ko, new_ko)
+        sign = f'<span class="imp">+{d}점</span> · ' if d >= 0 else f'{d}점 · '
+        return (f'{sign}약점이 <span class="pat">{old_short}</span> → '
+                f'<span class="imp">{new_short}</span>로 옮겨갔어요')
+    # One side had no focus → essentially clean
+    if not new_ko:
+        return f'<span class="imp">+{d}점</span> · 이번엔 약점이 없었어요' if d >= 0                else f'{d}점 · 이번엔 약점이 없었어요'
+    short = _HISTORY_CAT_SHORT.get(new_ko, new_ko)
+    sign = f'<span class="imp">+{d}점</span> · ' if d >= 0 else f'{d}점 · '
+    return f'{sign}새 약점 <span class="pat">{short}</span>가 보였어요'
+
+
+def _milestones(records) -> list[str]:
+    """Up to 4 milestone strings to show in the ribbon. records newest-first.
+    Pure derivations — no fake data, only what the records actually say."""
+    n = len(records)
+    if n == 0:
+        return []
+    out: list[str] = []
+    # 1) Count milestone
+    if n >= 10:
+        out.append(f'<b>{n}번째</b> 분석 — 꾸준함이 데이터가 됐어요')
+    elif n >= 5:
+        out.append(f'<b>{n}번째</b> 분석 기록')
+    # 2) First A-grade (oldest → newest scan)
+    for r in reversed(records):
+        if (r.score.grade or "").upper().startswith("A"):
+            out.append('첫 <b>A등급</b> 달성')
+            break
+    # 3) Best score
+    best = max(r.score.total for r in records)
+    out.append(f'최고 점수 <b>{best}점</b>')
+    # 4) Recent upswing — compare newest vs ~3rd most recent
+    if n >= 3:
+        recent = records[0].score.total
+        older = records[min(n - 1, 2)].score.total
+        if recent - older >= 6:
+            out.append(f'최근 <b>+{recent - older}점</b> 상승세')
+    return out[:4]
+
+
+def _node_card_html(record, is_latest: bool, is_milestone: bool) -> str:
+    """One node on the spine — bullet (latest is filled-green, milestone is
+    amber) + card with date / name / score / focus / event pip counts."""
     score = record.score
+    grade = score.grade or "—"
+    grade_class = _grade_cls(grade)
     focus = score.focus_area
-    n_events = len(record.events)
-    n_risk = sum(1 for e in record.events if e.severity == "danger")
-    rel = _relative_date(record.analyzed_at)
-    # ordinal: list is newest-first, so total - idx_in_list = "N번째 분석"
-    nth = total - idx_in_list
-    focus_html = (f'<span class="history-card-focus"><span class="k">FOCUS</span>'
-                  f'<span class="v">{focus.name_ko}</span></span>')\
-                 if focus else (
-                  '<span class="history-card-focus"><span class="k">FOCUS</span>'
-                  '<span class="v" style="color:var(--signal)">없음</span></span>')
-    risk_dot = ('<span class="history-card-risk"></span>'
-                if n_risk > 0 else '')
+    if focus:
+        focus_ko = focus.name_ko
+        focus_short = _HISTORY_CAT_SHORT.get(focus_ko, focus_ko)
+        focus_key = _HISTORY_CAT_KEY.get(focus_ko, "signal")
+        focus_html = (
+            f'<span class="ic">{_HISTORY_CAT_ICONS[focus_key]}</span>'
+            f'가장 약함 · <b>{focus_short}</b>'
+        )
+    else:
+        focus_html = '<span style="color:var(--signal)">약점 없음</span>'
+
+    risk = sum(1 for e in record.events if e.severity == "danger")
+    caution = sum(1 for e in record.events if e.severity == "caution")
+    pips = ""
+    if risk:
+        pips += f'<span class="pip risk"></span>{risk}'
+    if caution:
+        pips += f'<span class="pip amber"></span>{caution}'
+    if not pips:
+        pips = '<span class="pip safe"></span>0'
+
+    when = _relative_date(record.analyzed_at)
+    latest_tag = '<span class="latest-tag">최근</span>' if is_latest else ''
+
+    cls_extras = []
+    if is_latest:
+        cls_extras.append("latest")
+    if is_milestone:
+        cls_extras.append("milestone-node")
+    extra = (" " + " ".join(cls_extras)) if cls_extras else ""
+
     return f"""
-    <article class="history-card">
-      <button class="history-card-del" type="button"
-              data-session-id="{record.session_id}"
-              data-nth="{nth:02d}"
-              aria-label="이 분석 삭제">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
-             stroke-width="1.6" stroke-linecap="round">
-          <path d="M3 3 L13 13 M13 3 L3 13"/>
+    <div class="node{extra}">
+      <div class="node-bullet"></div>
+      <div class="node-card" data-session-id="{record.session_id}"
+           role="button" tabindex="0">
+        <button class="nc-del" data-session-id="{record.session_id}"
+                data-nth="{record.session_id}" title="삭제" aria-label="삭제">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round">
+            <path d="M6 6 L18 18 M18 6 L6 18"/>
+          </svg>
+        </button>
+        <div class="nc-top">
+          <div class="nc-meta">
+            <div class="nc-when">{when}{latest_tag}</div>
+            <div class="nc-name">{record.video_name or '주행 영상'}</div>
+          </div>
+          <div class="nc-score">
+            <span class="num">{score.total}</span>
+            <span class="grade {grade_class}">{grade}</span>
+          </div>
+        </div>
+        <div class="nc-bottom">
+          <div class="nc-focus">{focus_html}</div>
+          <div class="nc-events">{pips}</div>
+        </div>
+      </div>
+    </div>
+    """
+
+
+def _node_gap_html(narrative_html: str) -> str:
+    """Small one-line narrative between two adjacent nodes."""
+    return f"""
+    <div class="node-gap">
+      <div class="gap-spacer"></div>
+      <div class="gap-text">{narrative_html}</div>
+    </div>
+    """
+
+
+def _history_cta_footer_html(n: int) -> str:
+    return f"""
+    <section class="history-cta">
+      <button class="ready-btn-go" type="button" id="history-upload-btn">
+        새 영상 분석하기
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12 L19 12 M13 6 L19 12 L13 18"/>
         </svg>
       </button>
-      <div class="history-card-head">
-        <span class="history-card-nth">#{nth:02d}</span>
-        <span class="history-card-date">{rel}</span>
-      </div>
-      <div class="history-card-score">
-        <span class="num">{score.total}</span>
-        <span class="unit">/100</span>
-        <span class="grade">{score.grade}</span>
-      </div>
-      <div class="history-card-name" title="{record.video_name}">
-        {record.video_name or '주행 영상'}
-      </div>
-      <div class="history-card-meta">
-        {focus_html}
-        <span class="history-card-events">
-          <span class="k">EVENTS</span>
-          <span class="v">{n_events}{risk_dot}</span>
-        </span>
-      </div>
-    </article>
+    </section>
+    <footer class="history-foot">© 2026 DRIVINGASSIS · 당신의 운전을 기억합니다</footer>
     """
 
 
-def _pattern_card_html(rank: int, name_ko: str, total: int,
-                       drives: int, n_records: int) -> str:
-    """One pattern card — 'X가 N건, 전체 주행의 M%에서 반복'."""
-    pct = round(drives / n_records * 100) if n_records else 0
+def _history_nav_html(n: int) -> str:
     return f"""
-    <article class="history-pattern-card">
-      <span class="history-pattern-rank">TOP {rank}</span>
-      <h4>{name_ko}</h4>
-      <div class="history-pattern-stats">
-        <div class="ps">
-          <span class="ps-n">{total}</span>
-          <span class="ps-l">총 발생</span>
-        </div>
-        <div class="ps">
-          <span class="ps-n">{pct}<small>%</small></span>
-          <span class="ps-l">의 주행에서</span>
-        </div>
+    <nav class="history-nav">
+      <a class="history-brand" href="#dc-top" aria-label="DrivingAssis">
+        <span class="mark" aria-hidden="true">{_BRAND_SVG}</span>
+        <span>DRIVING<span class="accent">ASSIS</span></span>
+      </a>
+      <div class="history-nav-right">
+        <span class="count-pill">MY HISTORY · <b>{n}</b>건</span>
       </div>
-    </article>
+    </nav>
     """
 
 
 def history_screen_html(records=None, session_id: str = "—") -> str:
-    """The '내 주행 기록' page — list of past analyses, score trend sparkline,
-    repeated-pattern Top 3. Falls back to an empty-state when records is empty."""
+    """v6 spine layout. Three branches by record count: 0 (empty), 1 (sparse),
+    2+ (full journey with overview + milestones + spine).
+
+    Node cards carry `data-session-id` so DC_BOOT_JS can wire card click →
+    drilldown (re-show that past analysis). The × button keeps the same
+    `data-session-id` interface used by the delete bridge.
+    """
     records = list(records or [])
     n = len(records)
+    nav = _history_nav_html(n)
 
+    # ── n == 0 : empty state ──
     if n == 0:
         return f"""
 <div class="dc-v3-root history-root">
-  <nav class="ready-nav">
-    <a class="brand" href="#dc-top" aria-label="DrivingAssis">
-      <span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>
-      <span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>
-    </a>
-    <div class="ready-nav-right">
-      <span class="ready-session">MY HISTORY</span>
-    </div>
-  </nav>
-
+  {nav}
   <section class="history-empty">
-    <div class="history-empty-icon">
-      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor"
-           stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="6" y="10" width="36" height="30" rx="2"/>
-        <path d="M6 18h36"/>
-        <path d="M14 6v8M34 6v8"/>
+    <span class="em-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/>
       </svg>
-    </div>
-    <h1>아직 분석한 주행이 없어요.</h1>
-    <p>첫 영상을 분석하면, 다음 주행부터<br/>이 자리에 패턴과 변화가 쌓입니다.</p>
+    </span>
+    <h2>아직 기억할 주행이 없어요.</h2>
+    <p>첫 영상을 분석하면 이 자리에 당신의 운전 여정이<br/>
+       한 줄로 쌓이기 시작합니다.</p>
     <button class="ready-btn-go" type="button" id="history-upload-btn">
-      첫 영상 업로드 {_arrow_go_svg()}
+      첫 주행 분석하기
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12 L19 12 M13 6 L19 12 L13 18"/>
+      </svg>
     </button>
   </section>
-
-  <footer class="ready-foot">© 2026 DRIVINGASSIS · MY HISTORY</footer>
 </div>
 """
 
-    # ── Non-empty: sparkline + patterns + card grid ──
-    # Sparkline takes scores oldest-to-newest (left-to-right = time forward)
-    scores_chrono = [r.score.total for r in reversed(records)]
-    spark = _sparkline_svg(scores_chrono) if len(scores_chrono) >= 2 else (
-        '<div class="history-sparkline-empty">'
-        '두 번째 분석부터 점수 추이가 그려집니다.</div>'
-    )
-
-    latest = records[0].score.total
-    oldest = records[-1].score.total
-    delta_all = latest - oldest
-
-    patterns = _aggregate_patterns(records)[:3]
-    if patterns:
-        pat_html = "".join(
-            _pattern_card_html(i + 1, ko, total, drives, n)
-            for i, (ko, total, drives) in enumerate(patterns)
+    # ── n == 1 : sparse state ──
+    if n == 1:
+        r = records[0]
+        focus = r.score.focus_area
+        focus_ko = focus.name_ko if focus else None
+        focus_short = _HISTORY_CAT_SHORT.get(focus_ko, focus_ko) if focus_ko else None
+        focus_line = (
+            f'가장 약한 부분은 <b style="color:var(--ink)">{focus_short}</b>였어요. '
+            f'다음 주행에서 이 부분이 좋아지는지 같이 지켜볼게요.'
+        ) if focus_short else (
+            '큰 약점 없이 부드럽게 흘러간 주행이었어요. '
+            '다음 주행과 비교해 어떤 톤이 이어지는지 같이 볼게요.'
         )
-    else:
-        pat_html = ('<div class="history-pattern-empty">'
-                    '반복되는 패턴이 아직 없어요. 깨끗한 주행이 이어지고 있다는 뜻이에요.</div>')
-
-    cards = "".join(_history_card_html(r, i, n) for i, r in enumerate(records))
-
-    delta_summary = ""
-    if len(records) >= 2:
-        sign = "+" if delta_all > 0 else ""
-        delta_summary = (f'<div class="history-trend-delta">'
-                         f'<span class="k">처음 분석 대비</span>'
-                         f'<span class="v {"up" if delta_all >= 0 else "down"}">'
-                         f'{sign}{delta_all}점</span></div>')
-
-    return f"""
+        return f"""
 <div class="dc-v3-root history-root">
-
-  <nav class="ready-nav">
-    <a class="brand" href="#dc-top" aria-label="DrivingAssis">
-      <span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>
-      <span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>
-    </a>
-    <div class="ready-nav-right">
-      <span class="ready-session">MY HISTORY · {n}건</span>
-    </div>
-  </nav>
+  {nav}
 
   <section class="history-header">
-    <span class="label label-signal">My Drive History · 내 주행 기록</span>
-    <h1>
-      지금까지 <em>{n}건</em>의 분석.<br/>
-      <span class="em">당신의 패턴이 보이기 시작합니다.</span>
-    </h1>
+    <span class="kicker">내 주행 기록 / MY JOURNEY</span>
+    <h1>여정이 <span class="accent">시작됐어요.</span></h1>
+    <p class="sub">첫 분석을 기록했습니다. 다음 주행부터 지난번과
+       무엇이 달라졌는지, 어떤 패턴이 반복되는지 이 자리에서 이어서 보여드릴게요.</p>
   </section>
 
-  <section class="history-trend-wrap">
-    <div class="history-section-head">
-      <span class="label label-signal">Trend · 점수 추이</span>
-      <h3>시간을 따라 본 오늘까지의 흐름.</h3>
-    </div>
-    <div class="history-trend-card">
-      {spark}
-      <div class="history-trend-foot">
-        <span class="k">처음</span><span class="v">{oldest}</span>
-        <span class="sep">→</span>
-        <span class="k">최근</span><span class="v">{latest}</span>
-        {delta_summary}
+  <section class="history-sparse">
+    <div class="sparse-card">
+      <span class="sc-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17 L9 11 L13 15 L21 7"/>
+          <path d="M21 7 h-5 M21 7 v5"/>
+        </svg>
+      </span>
+      <h2>{r.video_name or '주행 영상'}</h2>
+      <p>{focus_line}</p>
+      <div class="sc-score">
+        <span class="num" style="color:var(--signal)">{r.score.total}</span>
+        <span class="unit">/100 · {r.score.grade}</span>
       </div>
     </div>
   </section>
 
-  <section class="history-patterns-wrap">
-    <div class="history-section-head">
-      <span class="label label-signal">Repeated · 반복 패턴</span>
-      <h3>당신이 가장 자주 만나는 순간 Top 3.</h3>
-    </div>
-    <div class="history-pattern-grid">
-      {pat_html}
+  {_history_cta_footer_html(n)}
+</div>
+"""
+
+    # ── n >= 2 : full journey ──
+    first = records[-1]
+    latest = records[0]
+    delta_total = latest.score.total - first.score.total
+    best = max(r.score.total for r in records)
+    best_session_ids = {r.session_id for r in records if r.score.total == best}
+
+    # Sparkline: oldest → newest left-to-right
+    scores_chrono = [r.score.total for r in reversed(records)]
+    spark = _spine_sparkline_svg(scores_chrono)
+
+    # Milestone ribbon
+    ms_lines = _milestones(records)
+    star_svg = ('<svg viewBox="0 0 24 24" fill="currentColor">'
+                '<path d="M12 2l2.39 6.95L21 9.27l-5.45 4.73L17.18 21'
+                ' 12 17.27 6.82 21l1.63-6.99L3 9.27l6.61-.32z"/></svg>')
+    ms_html = "".join(
+        f'<div class="milestone"><span class="ms-mark">{star_svg}</span>'
+        f'<span class="ms-text">{m}</span></div>'
+        for m in ms_lines
+    )
+
+    # Spine nodes + gap narratives
+    spine_parts: list[str] = []
+    for i, r in enumerate(records):
+        is_latest = (i == 0)
+        # milestone glow if: (a) A-grade, or (b) tied best score and not latest
+        is_milestone = (
+            (r.score.grade or "").upper().startswith("A")
+            or (r.score.total == best and not is_latest
+                and r.session_id in best_session_ids)
+        )
+        spine_parts.append(_node_card_html(r, is_latest, is_milestone))
+        if i + 1 < len(records):
+            spine_parts.append(_node_gap_html(_gap_narrative(r, records[i + 1])))
+
+    latest_focus = latest.score.focus_area
+    latest_focus_short = (_HISTORY_CAT_SHORT.get(latest_focus.name_ko, latest_focus.name_ko)
+                          if latest_focus else "없음")
+
+    delta_chip = (
+        f'<span class="chip up">▲ +{delta_total}</span>' if delta_total >= 0
+        else f'<span class="chip down">▼ {-delta_total}</span>'
+    )
+
+    first_when = _relative_date(first.analyzed_at)
+
+    return f"""
+<div class="dc-v3-root history-root">
+  {nav}
+
+  <section class="history-header">
+    <span class="kicker">내 주행 기록 / MY JOURNEY</span>
+    <h1>{n}번의 주행,<br/><span class="accent">패턴이 보이기 시작해요.</span></h1>
+    <p class="sub">DrivingAssis는 매 분석을 기억합니다. 점수만이 아니라,
+       무엇이 좋아졌고 어떤 약점이 반복되는지를 한 줄의 여정으로 이어드려요.</p>
+  </section>
+
+  <section class="history-overview">
+    <div class="ov-card">
+      <div class="ov-spark">
+        <div class="ov-label">
+          <span>점수 추이 · SCORE TREND</span>
+          <span class="range">{first_when} → 오늘</span>
+        </div>
+        <div class="spark-wrap">{spark}</div>
+      </div>
+      <div class="ov-stats">
+        <div class="ov-stat">
+          <span class="k">처음 → 최근</span>
+          <span class="v">{first.score.total} → {latest.score.total} {delta_chip}</span>
+        </div>
+        <div class="ov-stat">
+          <span class="k">최고 점수</span>
+          <span class="v">{best}<span style="color:var(--muted-2);font-size:12px">/100</span></span>
+        </div>
+        <div class="ov-stat">
+          <span class="k">지금 가장 약한 곳</span>
+          <span class="v" style="color:var(--amber)">{latest_focus_short}</span>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="history-list-wrap">
-    <div class="history-section-head">
-      <span class="label label-signal">All Reports · 전체 분석</span>
-      <h3>지난 분석들, 최근 순서로.</h3>
+  {f'<div class="history-milestones">{ms_html}</div>' if ms_html else ''}
+
+  <section class="history-spine">
+    <div class="spine-head">
+      <div>
+        <span class="label">여정 · Timeline</span>
+        <h2>최근부터 <em>처음</em>까지.</h2>
+      </div>
     </div>
-    <div class="history-grid">
-      {cards}
+    <div class="spine">
+      {''.join(spine_parts)}
     </div>
   </section>
 
-  <section class="history-cta">
-    <button class="ready-btn-go" type="button" id="history-upload-btn">
-      새 영상 분석하기 {_arrow_go_svg()}
-    </button>
-  </section>
-
-  <footer class="ready-foot">© 2026 DRIVINGASSIS · MY HISTORY · {n}건</footer>
-
+  {_history_cta_footer_html(n)}
 </div>
 """
 
