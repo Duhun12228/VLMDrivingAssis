@@ -202,6 +202,17 @@ DC_BOOT_JS = """
       });
     }
 
+    // --- 3e. HISTORY back button → reset to IDLE ---
+    // The visible '← 홈' button in the history nav (and the history logo)
+    // bridge to the hidden home button so there's always a way back.
+    const historyBack = document.getElementById('history-back-btn');
+    if (historyBack && !historyBack.__bound) {
+      historyBack.__bound = true;
+      historyBack.addEventListener('click', () => {
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+
     // --- 3g. HISTORY node card → drill in (re-show past RESULTS) ---
     // Each .node-card carries data-session-id. Click anywhere on the card
     // (except on the × delete button) → fill hidden Textbox + click hidden
@@ -798,6 +809,12 @@ def go_results():
 # marks past that, so the % only ever moves forward through real work.
 _DETECT_PCT = 60
 
+# events/vlm/score finish in milliseconds, so without a hold the stepper
+# flashes 02→03→04 instantly after the long detection phase. This brief
+# dwell lets each phase label stay readable. It is NOT fabricated progress —
+# the real work runs during/right after each hold; we just pace the display.
+_PHASE_DWELL = 0.45
+
 
 def run_analysis(video_path: str, analyz_meta: dict | None = None):
     """End-to-end pipeline as a GENERATOR that streams real progress.
@@ -881,17 +898,20 @@ def run_analysis(video_path: str, analyz_meta: dict | None = None):
     # ── Phase 2: event extraction ──
     yield (screen(pct=65, veh=veh_cum, ped=ped_cum, two=two_cum,
                   phase="events", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)  # keep "이벤트 추출" readable (work below is instant)
     events = extract_events(frames)
     n_risk = sum(1 for e in events if e.severity == "danger")
 
     # ── Phase 3: VLM coaching (event frames only) ──
     yield (screen(pct=72, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
                   phase="vlm", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)  # keep "코칭 작성" readable
     coachings = [generate_coaching(ev) for ev in events]
 
     # ── Phase 4a: score ──
     yield (screen(pct=80, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
                   phase="score", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)  # keep "점수 산정" readable
     score = calculate_score(events)
 
     # ── Phase 4b: annotated video + evidence stills ──
@@ -949,7 +969,7 @@ def build_app() -> gr.Blocks:
     # doesn't auto-invoke that function. A <script> tag is guaranteed to
     # execute as soon as the document loads.
     head_html = f"<script>(function(){{ ({DC_BOOT_JS})(); }})();</script>"
-    with gr.Blocks(title="DrivingAssis AI", head=head_html) as app:
+    with gr.Blocks(title="BackMirror", head=head_html) as app:
         # Invisible click targets bridged by DC_BOOT_JS. These MUST live at
         # the top level (not inside conditionally-visible Groups) because
         # Gradio 6 removes invisible-Group children from the DOM entirely,

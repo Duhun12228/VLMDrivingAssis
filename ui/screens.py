@@ -1,7 +1,7 @@
-"""DrivingAssis AI landing page — v3 editorial / cinematic.
+"""BackMirror AI landing page — v3 editorial / cinematic.
 
 The IDLE screen is a 7-section marketing page based on the v3 HTML mock
-(DrivingAssis v3.html — real photos + SVG annotations):
+(BackMirror v3.html — real photos + SVG annotations):
 
     1. Fixed top nav (brand + primary CTA)
     2. Hero — split dual-frame (raw / AI-analyzed) + bottom stat strip
@@ -29,17 +29,17 @@ def _arrow_svg() -> str:
             '<path d="M2 6h8M7 2l4 4-4 4"/></svg>')
 
 
+# BackMirror logo — a car side mirror: rounded glass on an arm reaching back
+# from the car body, with the reflected road converging to a vanishing-point
+# dot (the moment the AI looks back at).
 _BRAND_SVG = (
     '<svg viewBox="0 0 32 32" fill="none">'
-    '<path d="M2 8 L2 2 L8 2" stroke="#00E59A" stroke-width="1.6" stroke-linecap="square"/>'
-    '<path d="M24 2 L30 2 L30 8" stroke="#00E59A" stroke-width="1.6" stroke-linecap="square"/>'
-    '<path d="M30 24 L30 30 L24 30" stroke="#00E59A" stroke-width="1.6" stroke-linecap="square"/>'
-    '<path d="M8 30 L2 30 L2 24" stroke="#00E59A" stroke-width="1.6" stroke-linecap="square"/>'
-    '<path d="M6 28 L14.5 14" stroke="#00E59A" stroke-width="2" stroke-linecap="round"/>'
-    '<path d="M26 28 L17.5 14" stroke="#00E59A" stroke-width="2" stroke-linecap="round"/>'
-    '<path d="M16 28 L16 22" stroke="#00E59A" stroke-width="1.6" stroke-linecap="round"/>'
-    '<path d="M16 19 L16 15.5" stroke="#00E59A" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/>'
-    '<circle cx="16" cy="13" r="1.6" fill="#00E59A"/>'
+    '<rect x="10.5" y="7" width="17" height="16" rx="5.5" stroke="#00E59A" stroke-width="1.8"/>'
+    '<path d="M10.5 15 L5 17" stroke="#00E59A" stroke-width="1.8" stroke-linecap="round"/>'
+    '<path d="M5 13 L5 21" stroke="#00E59A" stroke-width="1.8" stroke-linecap="round"/>'
+    '<path d="M15 19 L18 12.5" stroke="#00E59A" stroke-width="1.3" stroke-linecap="round"/>'
+    '<path d="M22 19 L19 12.5" stroke="#00E59A" stroke-width="1.3" stroke-linecap="round"/>'
+    '<circle cx="18.5" cy="11.3" r="1.35" fill="#00E59A"/>'
     '</svg>'
 )
 
@@ -47,9 +47,9 @@ _BRAND_SVG = (
 def _brand_html() -> str:
     """Shared brand mark — used in nav + footer."""
     return (
-        '<a class="brand" href="#dc-top" aria-label="DrivingAssis">'
+        '<a class="brand" href="#dc-top" aria-label="BackMirror">'
         f'<span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>'
-        '<span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>'
+        '<span>BACK<span style="color:var(--signal)">MIRROR</span></span>'
         '</a>'
     )
 
@@ -88,7 +88,7 @@ def _hero_section() -> str:
           </h1>
         </div>
         <p class="hero-sub" data-reveal style="--rd:500ms">
-          블랙박스 영상을 올리면 DrivingAssis가 급제동·차선 이탈·차간거리 부족 같은
+          블랙박스 영상을 올리면 BackMirror가 급제동·차선 이탈·차간거리 부족 같은
           위험 이벤트를 자동으로 찾아내고, 그 순간의 운전 습관을 한 페이지 리포트로 정리합니다.
         </p>
       </div>
@@ -103,7 +103,7 @@ def _hero_section() -> str:
         </div>
 
         <div class="frame frame-ai"><i></i>
-          <span class="frame-tag mono">AI · DrivingAssis</span>
+          <span class="frame-tag mono">AI · BackMirror</span>
           <span class="frame-tc">00:00:13:21 · 24 fps</span>
           <video autoplay muted loop playsinline preload="auto"
                  aria-label="야간 주행 POV — AI 분석"
@@ -461,7 +461,7 @@ def _footer_section() -> str:
     <footer class="footer-min" id="dc-footer">
       {_brand_html()}
       <p class="foot-tag">블랙박스 영상 한 편을 한 페이지 리포트로 바꾸는 운전 코칭 프로젝트.</p>
-      <div class="foot-mini mono">© 2026 DRIVINGASSIS</div>
+      <div class="foot-mini mono">© 2026 BACKMIRROR</div>
     </footer>
     """
 
@@ -605,9 +605,9 @@ def ready_screen_html(
 <div class="dc-v3-root ready-root">
 
   <nav class="ready-nav">
-    <a class="brand" href="#dc-top" aria-label="DrivingAssis">
+    <a class="brand" href="#dc-top" aria-label="BackMirror">
       <span class="brand-mark" aria-hidden="true">{_BRAND_SVG}</span>
-      <span>DRIVING<span style="color:var(--signal)">ASSIS</span></span>
+      <span>BACK<span style="color:var(--signal)">MIRROR</span></span>
     </a>
     <div class="ready-nav-right">
       <span class="ready-session">SESSION · {session_id}</span>
@@ -693,7 +693,7 @@ def ready_screen_html(
     </div>
   </section>
 
-  <footer class="ready-foot">© 2026 DRIVINGASSIS · 분석 세션 {session_id}</footer>
+  <footer class="ready-foot">© 2026 BACKMIRROR · 분석 세션 {session_id}</footer>
 
 </div>
 """
@@ -859,9 +859,9 @@ def analyzing_screen_html(
 <div class="dc-v3-root analyz-root">
 
   <nav class="analyz-nav">
-    <a class="analyz-brand" href="#dc-top" aria-label="DrivingAssis">
+    <a class="analyz-brand" href="#dc-top" aria-label="BackMirror">
       <span class="mark" aria-hidden="true">{_BRAND_SVG}</span>
-      <span>DRIVING<span class="accent">ASSIS</span></span>
+      <span>BACK<span class="accent">MIRROR</span></span>
     </a>
     <div class="analyz-nav-right">
       <span class="live-pill"><span class="dot"></span>LIVE · {nav_label}</span>
@@ -982,11 +982,29 @@ def _sev_label(severity: str) -> str:
     )
 
 
+def _first_coach_sentence(text: str, max_len: int = 70) -> str:
+    """First actionable sentence of a (possibly multi-step) coaching plan.
+
+    Mock/real VLM action plans can read '1) … . 2) … . 3) …'. The hero quote
+    is the screen's one-line soul — it must stay one punchy sentence, not the
+    whole plan, or it blows the layout out vertically. Defensive against any
+    length: strips a leading enumerator, cuts at the first sentence boundary,
+    hard-caps as a last resort."""
+    t = (text or "").strip()
+    t = re.sub(r"^\s*\d+[).．.]\s*", "", t)         # drop leading "1) " / "1. "
+    m = re.search(r"[.!?。](\s|$)", t)               # first sentence boundary
+    if m:
+        t = t[: m.start() + 1].strip()
+    if len(t) > max_len:
+        t = t[: max_len - 1].rstrip() + "…"
+    return t
+
+
 def _hero_quote_text(hero_event, hero_coaching) -> str:
     """One-sentence coaching line for the hero. Prefers VLM action_plan,
     falls back to a soft message when there's nothing to coach about."""
     if hero_event and hero_coaching and (hero_coaching.action_plan or "").strip():
-        return hero_coaching.action_plan.strip()
+        return _first_coach_sentence(hero_coaching.action_plan)
     if hero_event:
         # event found but no coaching text — minimal fallback per severity
         if hero_event.severity == "danger":
@@ -1161,6 +1179,41 @@ def _timeline_html_v5(events, duration_s: float) -> str:
     """
 
 
+def _cot_details_html(coaching) -> str:
+    """DriveVLM-style 3-stage reasoning (상황 묘사 → 위험 분석 → 행동 제안),
+    collapsed by default. The one-line action above is the takeaway; this
+    discloses the VLM's full chain-of-thought — the 'why' that separates
+    contextual coaching from a bare score. Native <details>, no JS."""
+    if not coaching:
+        return ""
+    stages = [
+        ("상황", "desc", (coaching.scene_description or "").strip()),
+        ("위험", "risk", (coaching.scene_analysis or "").strip()),
+        ("행동", "act",  (coaching.action_plan or "").strip()),
+    ]
+    rows = "".join(
+        f'<div class="cot-stage cot-{key}">'
+        f'<span class="cot-label">{label}</span>'
+        f'<p>{text}</p>'
+        f'</div>'
+        for label, key, text in stages if text
+    )
+    if not rows:
+        return ""
+    return f"""
+        <details class="m-cot">
+          <summary>
+            <span class="cot-sum-label">AI 추론 과정</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9 L12 15 L18 9"/>
+            </svg>
+          </summary>
+          <div class="cot-body">{rows}</div>
+        </details>
+    """
+
+
 def _moment_card_v5_html(event, coaching, still_path: str) -> str:
     sev_cls = _sev_cls(event.severity)
     sev_label = _sev_label(event.severity)
@@ -1170,13 +1223,17 @@ def _moment_card_v5_html(event, coaching, still_path: str) -> str:
         f'<img alt="{tc}" src="{still_url}"/>'
         if still_url else '<div class="m-still-fallback"></div>'
     )
+    # Visible line = the one-sentence takeaway; the full 3-stage reasoning
+    # lives in the collapsible "AI 추론 과정" disclosure below it.
     action = ""
     if coaching:
-        action = (coaching.action_plan or coaching.scene_analysis
-                  or coaching.scene_description or "")
+        raw = (coaching.action_plan or coaching.scene_analysis
+               or coaching.scene_description or "")
+        action = _first_coach_sentence(raw) if raw else ""
     action_block = (
         f'<div class="m-action">{action}</div>' if action.strip() else ""
     )
+    cot_block = _cot_details_html(coaching)
     return f"""
     <article class="moment" data-tc="{event.timestamp:.2f}">
       <div class="m-still">
@@ -1188,6 +1245,7 @@ def _moment_card_v5_html(event, coaching, still_path: str) -> str:
         <div class="m-title">{event.title}</div>
         <p class="m-summary">{event.summary}</p>
         {action_block}
+        {cot_block}
       </div>
     </article>
     """
@@ -1582,9 +1640,9 @@ def results_screen_html(
 <div class="dc-v3-root results-root">
 
   <nav class="results-nav">
-    <a class="results-brand" href="#dc-top" aria-label="DrivingAssis">
+    <a class="results-brand" href="#dc-top" aria-label="BackMirror">
       <span class="mark" aria-hidden="true">{_BRAND_SVG}</span>
-      <span>DRIVING<span class="accent">ASSIS</span></span>
+      <span>BACK<span class="accent">MIRROR</span></span>
     </a>
     <div class="results-nav-right">
       <span class="ready-pill"><span class="dot"></span>리포트 준비됨</span>
@@ -1629,7 +1687,7 @@ def results_screen_html(
     </button>
   </section>
 
-  <footer class="results-foot">© 2026 DRIVINGASSIS · 세션 {session_id}</footer>
+  <footer class="results-foot">© 2026 BACKMIRROR · 세션 {session_id}</footer>
 
 </div>
 """
@@ -1687,10 +1745,11 @@ def _spine_sparkline_svg(scores: list[int]) -> str:
         return ""
     pts = scores
     n = len(pts)
-    # Padding tuned so:
-    #  • leftmost/rightmost dots don't kiss the SVG edges
-    #  • the latest-dot halo (r=7) is fully visible inside the viewBox
-    W, H, pad_x, pad_y = 100, 90, 9, 16
+    # Wide viewBox (≈6.7:1). The SVG renders with width:100% + height:auto so
+    # the element keeps THIS aspect ratio — that's what stops preserveAspect
+    # ratio="none" from squashing the dots into horizontal ovals. Padding
+    # leaves room for edge dots + the latest-dot halo (r=7).
+    W, H, pad_x, pad_y = 600, 90, 40, 16
     raw_lo, raw_hi = min(pts), max(pts)
     # Minimum visible span so a tight cluster (e.g. 94..97) doesn't span the
     # entire chart height and exaggerate small differences. Re-centers the
@@ -1836,9 +1895,19 @@ def _milestones(records) -> list[str]:
     return out[:4]
 
 
+def _score_tier(total: int) -> str:
+    """Spine bullet color tier by score, aligned to the A / B–C / D grade
+    bands: green (good) ≥ 90, amber (warn) 70–89, red (bad) < 70."""
+    if total >= 90:
+        return "tier-good"
+    if total >= 70:
+        return "tier-warn"
+    return "tier-bad"
+
+
 def _node_card_html(record, is_latest: bool, is_milestone: bool) -> str:
-    """One node on the spine — bullet (latest is filled-green, milestone is
-    amber) + card with date / name / score / focus / event pip counts."""
+    """One node on the spine — bullet colored by score tier (green/amber/red)
+    + card with date / name / score / focus / event pip counts."""
     score = record.score
     grade = score.grade or "—"
     grade_class = _grade_cls(grade)
@@ -1867,12 +1936,12 @@ def _node_card_html(record, is_latest: bool, is_milestone: bool) -> str:
     when = _relative_date(record.analyzed_at)
     latest_tag = '<span class="latest-tag">최근</span>' if is_latest else ''
 
-    cls_extras = []
+    cls_extras = [_score_tier(score.total)]
     if is_latest:
         cls_extras.append("latest")
     if is_milestone:
         cls_extras.append("milestone-node")
-    extra = (" " + " ".join(cls_extras)) if cls_extras else ""
+    extra = " " + " ".join(cls_extras)
 
     return f"""
     <div class="node{extra}">
@@ -1926,17 +1995,27 @@ def _history_cta_footer_html(n: int) -> str:
         </svg>
       </button>
     </section>
-    <footer class="history-foot">© 2026 DRIVINGASSIS · 당신의 운전을 기억합니다</footer>
+    <footer class="history-foot">© 2026 BACKMIRROR · 당신의 운전을 기억합니다</footer>
     """
 
 
 def _history_nav_html(n: int) -> str:
     return f"""
     <nav class="history-nav">
-      <a class="history-brand" href="#dc-top" aria-label="DrivingAssis">
-        <span class="mark" aria-hidden="true">{_BRAND_SVG}</span>
-        <span>DRIVING<span class="accent">ASSIS</span></span>
-      </a>
+      <div class="history-nav-left">
+        <button class="history-back" type="button" id="history-back-btn"
+                aria-label="홈으로 돌아가기">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12 L5 12 M11 6 L5 12 L11 18"/>
+          </svg>
+          홈
+        </button>
+        <a class="history-brand" href="#dc-top" aria-label="BackMirror">
+          <span class="mark" aria-hidden="true">{_BRAND_SVG}</span>
+          <span>BACK<span class="accent">MIRROR</span></span>
+        </a>
+      </div>
       <div class="history-nav-right">
         <span class="count-pill">MY HISTORY · <b>{n}</b>건</span>
       </div>
@@ -2082,7 +2161,7 @@ def history_screen_html(records=None, session_id: str = "—") -> str:
   <section class="history-header">
     <span class="kicker">내 주행 기록 / MY JOURNEY</span>
     <h1>{n}번의 주행,<br/><span class="accent">패턴이 보이기 시작해요.</span></h1>
-    <p class="sub">DrivingAssis는 매 분석을 기억합니다. 점수만이 아니라,
+    <p class="sub">BackMirror는 매 분석을 기억합니다. 점수만이 아니라,
        무엇이 좋아졌고 어떤 약점이 반복되는지를 한 줄의 여정으로 이어드려요.</p>
   </section>
 
@@ -2160,7 +2239,7 @@ def footer_html() -> str:
     <div class="dc-v3-root" style="background: transparent;">
       <div class="foot-bar" style="padding: 28px var(--v3-pad); margin-top: 0;
                                     border-top: 1px solid var(--line);">
-        <div class="left">© 2026 DrivingAssis</div>
+        <div class="left">© 2026 BackMirror</div>
         <div class="right">
           <span>KR · KO</span>
           <a href="#">Status</a>

@@ -2235,11 +2235,18 @@ body:has(.dc-v3-root) main {
 }
 .dc-v3-root .hero-quote .word {
   display: inline-block;
-  opacity: 0;
-  transform: translateY(14px);
-  animation: dcv5HeroWordIn .6s var(--v3-ease) forwards;
-  animation-delay: calc(var(--i, 0) * 70ms + 200ms);
   white-space: pre;
+  /* Visible by default — the entrance is enhancement only. Gradio's CSS
+     injection can drop the `animation` SHORTHAND (notably when it carries a
+     var() easing), which would leave opacity:0 words permanently hidden.
+     Using longhands + fill-mode:backwards keeps the slide-in when it runs and
+     falls back to fully visible when it doesn't. Literal easing avoids the
+     var() that triggered the drop. */
+  animation-name: dcv5HeroWordIn;
+  animation-duration: .6s;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+  animation-fill-mode: backwards;
+  animation-delay: calc(var(--i, 0) * 70ms + 200ms);
 }
 @keyframes dcv5HeroWordIn {
   from { opacity: 0; transform: translateY(14px); }
@@ -2685,6 +2692,50 @@ body:has(.dc-v3-root) main {
   flex-shrink: 0;
 }
 
+/* CoT reasoning disclosure — DriveVLM 3-stage (상황 → 위험 → 행동).
+   Collapsed by default so the card stays clean; opens to show the model's
+   full chain-of-thought. */
+.dc-v3-root .moment .m-cot {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.dc-v3-root .moment .m-cot > summary {
+  display: flex; align-items: center; gap: 8px;
+  list-style: none; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted);
+  transition: color .2s var(--v3-ease);
+}
+.dc-v3-root .moment .m-cot > summary::-webkit-details-marker { display: none; }
+.dc-v3-root .moment .m-cot > summary:hover { color: var(--signal); }
+.dc-v3-root .moment .m-cot .chev {
+  width: 13px; height: 13px; margin-left: auto;
+  transition: transform .25s var(--v3-ease);
+}
+.dc-v3-root .moment .m-cot[open] .chev { transform: rotate(180deg); }
+.dc-v3-root .moment .m-cot .cot-body {
+  display: flex; flex-direction: column; gap: 10px;
+  padding-top: 12px;
+}
+.dc-v3-root .moment .cot-stage {
+  display: grid; grid-template-columns: 40px 1fr; gap: 10px;
+  align-items: start;
+}
+.dc-v3-root .moment .cot-stage .cot-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+  padding: 3px 0; text-align: center;
+  border-radius: 3px;
+}
+.dc-v3-root .moment .cot-desc .cot-label { color: var(--muted); background: rgba(255,255,255,0.06); }
+.dc-v3-root .moment .cot-risk .cot-label { color: var(--amber);  background: rgba(255,181,71,0.12); }
+.dc-v3-root .moment .cot-act  .cot-label { color: var(--signal); background: rgba(0,229,154,0.12); }
+.dc-v3-root .moment .cot-stage p {
+  margin: 0; font-size: 12.5px; line-height: 1.6;
+  color: rgba(255,255,255,0.78);
+}
+
 .dc-v3-root .moments-empty {
   border: 1px solid var(--line);
   background: var(--bg-2);
@@ -2852,6 +2903,28 @@ body:has(.dc-v3-root) main {
   backdrop-filter: saturate(140%) blur(14px);
   position: sticky; top: 0; z-index: 60;
 }
+.dc-v3-root .history-nav-left {
+  display: flex; align-items: center; gap: 18px;
+}
+.dc-v3-root .history-back {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 14px 8px 11px;
+  font-family: Inter, sans-serif; font-size: 13px; font-weight: 600;
+  color: var(--ink);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color .2s var(--v3-ease),
+              border-color .2s var(--v3-ease),
+              transform .2s var(--v3-spring);
+}
+.dc-v3-root .history-back svg { width: 15px; height: 15px; }
+.dc-v3-root .history-back:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.32);
+  transform: translateX(-2px);
+}
 .dc-v3-root .history-brand {
   display: flex; align-items: center; gap: 12px;
   font-family: Inter, sans-serif; font-weight: 700; font-size: 13px;
@@ -2942,7 +3015,9 @@ body:has(.dc-v3-root) main {
 
 .dc-v3-root .spark-wrap { position: relative; width: 100%; }
 .dc-v3-root .spark-wrap svg {
-  width: 100%; height: 90px; display: block; overflow: visible;
+  /* height:auto keeps the element's aspect == viewBox aspect (≈6.7:1), so
+     the line + dots scale uniformly instead of stretching horizontally. */
+  width: 100%; height: auto; display: block; overflow: visible;
 }
 .dc-v3-root .spark-line {
   fill: none; stroke: var(--signal); stroke-width: 2;
@@ -3067,7 +3142,7 @@ body:has(.dc-v3-root) main {
   }
 }
 
-/* node bullet — latest is filled green, milestone is amber */
+/* node bullet — color = score tier (green good / amber warn / red bad) */
 .dc-v3-root .history-root .node-bullet {
   position: relative;
   z-index: 2;
@@ -3080,16 +3155,23 @@ body:has(.dc-v3-root) main {
 @media (max-width: 640px) {
   .dc-v3-root .history-root .node-bullet { margin-left: 11px; }
 }
-.dc-v3-root .node.latest .node-bullet {
+.dc-v3-root .node.tier-good .node-bullet {
+  border-color: var(--signal);
   background: var(--signal);
-  box-shadow: 0 0 0 4px rgba(0,229,154,0.16),
-              0 0 16px rgba(0,229,154,0.6);
+  box-shadow: 0 0 0 4px rgba(0,229,154,0.14),
+              0 0 14px rgba(0,229,154,0.5);
 }
-.dc-v3-root .node.milestone-node .node-bullet {
+.dc-v3-root .node.tier-warn .node-bullet {
   border-color: var(--amber);
   background: var(--amber);
-  box-shadow: 0 0 0 4px rgba(255,181,71,0.16),
-              0 0 14px rgba(255,181,71,0.55);
+  box-shadow: 0 0 0 4px rgba(255,181,71,0.14),
+              0 0 14px rgba(255,181,71,0.5);
+}
+.dc-v3-root .node.tier-bad .node-bullet {
+  border-color: var(--risk);
+  background: var(--risk);
+  box-shadow: 0 0 0 4px rgba(255,92,92,0.14),
+              0 0 14px rgba(255,92,92,0.5);
 }
 
 /* node gap (narrative between adjacent nodes) */
