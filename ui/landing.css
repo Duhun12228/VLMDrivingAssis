@@ -2583,6 +2583,25 @@ body:has(.dc-v3-root) main {
 }
 
 /* MOMENTS — adaptive grid */
+/* Graceful analysis-failure screen (see screens.error_results_html) */
+.dc-v3-root .results-error {
+  max-width: 640px; margin: 0 auto;
+  padding: clamp(90px, 16vh, 180px) var(--v3-pad) 60px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+}
+.dc-v3-root .results-error-mark {
+  width: 54px; height: 54px; margin-bottom: 6px;
+  filter: drop-shadow(0 0 16px rgba(0,229,154,0.35));
+}
+.dc-v3-root .results-error-mark svg { width: 100%; height: 100%; display: block; }
+.dc-v3-root .results-error h1 {
+  font-size: clamp(28px, 3.4vw, 44px); font-weight: 800;
+  letter-spacing: -0.03em; margin: 4px 0 0; color: var(--ink);
+}
+.dc-v3-root .results-error p { color: var(--muted); line-height: 1.7; margin: 0; }
+.dc-v3-root .results-error .ready-btn-go { margin-top: 18px; }
+
 .dc-v3-root .moments-grid {
   display: grid;
   gap: 16px;

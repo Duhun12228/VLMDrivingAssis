@@ -1,4 +1,4 @@
-"""DriveCoach AI — main Gradio app.
+"""BackMirror — main Gradio app.
 
 The app is a 4-state machine:
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import tempfile
 import time
+import traceback
 import uuid
 
 import cv2
@@ -33,6 +34,7 @@ from core.vlm import generate_coaching
 
 from ui.screens import (
     analyzing_screen_html,
+    error_results_html,
     history_screen_html,
     idle_hero_html,
     ready_screen_html,
@@ -817,6 +819,18 @@ _PHASE_DWELL = 0.45
 
 
 def run_analysis(video_path: str, analyz_meta: dict | None = None):
+    """Public entry — wraps the pipeline generator so a mid-analysis exception
+    surfaces a graceful error screen instead of freezing the live ANALYZING
+    screen during a demo. Streams the impl's yields through unchanged."""
+    sid = (analyz_meta or {}).get("sid") or _new_session_id()
+    try:
+        yield from _run_analysis_impl(video_path, analyz_meta)
+    except Exception:
+        traceback.print_exc()
+        yield (gr.update(), error_results_html(session_id=sid))
+
+
+def _run_analysis_impl(video_path: str, analyz_meta: dict | None = None):
     """End-to-end pipeline as a GENERATOR that streams real progress.
 
     Each yield is `(analyzing_html_update, results_html_update)`. While the

@@ -1,4 +1,4 @@
-"""DriveCoach AI design system.
+"""BackMirror design system.
 
 Design philosophy (Toss-inspired):
   - Information hierarchy is expressed by type scale, not color

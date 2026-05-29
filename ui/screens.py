@@ -54,6 +54,32 @@ def _brand_html() -> str:
     )
 
 
+def error_results_html(session_id: str = "—") -> str:
+    """Graceful failure screen shown in place of RESULTS when the analysis
+    pipeline raises (unsupported/corrupt video, transcode failure, etc.) — so
+    the app never freezes on the live ANALYZING screen during a demo. The
+    '다른 영상으로' button reuses #results-again-btn → resets to IDLE."""
+    return f"""
+<div class="dc-v3-root results-root">
+  <section class="results-error">
+    <div class="results-error-mark" aria-hidden="true">{_BRAND_SVG}</div>
+    <span class="label label-signal">분석 실패 · ANALYSIS FAILED</span>
+    <h1>이 영상은 분석하지 못했어요.</h1>
+    <p>영상 형식이 지원되지 않거나 처리 중 문제가 생겼어요.<br/>
+       다른 영상으로 다시 시도해 주세요.</p>
+    <button class="ready-btn-go" type="button" id="results-again-btn">
+      다른 영상으로
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12 L19 12 M13 6 L19 12 L13 18"/>
+      </svg>
+    </button>
+  </section>
+  <footer class="ready-foot">© 2026 BACKMIRROR · 세션 {session_id}</footer>
+</div>
+"""
+
+
 # ─── 1. NAV ───────────────────────────────────────────────────
 
 def _nav_html() -> str:

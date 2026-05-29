@@ -1,7 +1,7 @@
 """Local persistence for past analysis runs.
 
 Stores one JSON file per analysis under `~/.drivingassis/history/`. This is
-what turns DrivingAssis from a one-shot scorecard into a coach that
+what turns BackMirror from a one-shot scorecard into a coach that
 remembers — the Results screen reads `load_prior()` to compare this run
 against the previous one.
 

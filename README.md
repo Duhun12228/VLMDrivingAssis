@@ -1,9 +1,9 @@
-# DrivingAssis
+# BackMirror
 
 > 블랙박스 영상 한 편을 한 페이지 리포트로 바꾸는 운전 코칭 프로젝트.
 > YOLO 객체 검출 + Qwen2.5-VL 코칭 + 이벤트 기반 하이브리드 분석.
 
-> FVE3011 자동차인공지능 Term Project — Team DrivingAssis
+> FVE3011 자동차인공지능 Term Project — Team BackMirror
 > 이지원 (Detection) · 박준형 (UI/UX) · 김두훈 (VLM)
 
 ---
