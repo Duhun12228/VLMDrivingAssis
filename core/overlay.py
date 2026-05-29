@@ -211,7 +211,7 @@ def _draw_hud_bar(frame: np.ndarray, det: FrameDetections, idx: int, total: int)
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (170, 220, 200), 1, cv2.LINE_AA)
 
     # Brand mark
-    cv2.putText(frame, "DriveCoach AI", (w // 2 - 70, h - bar_h + 14),
+    cv2.putText(frame, "BackMirror", (w // 2 - 70, h - bar_h + 14),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 200, 180), 1, cv2.LINE_AA)
 
 

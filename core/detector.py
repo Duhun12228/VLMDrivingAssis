@@ -1,11 +1,12 @@
 """Object detection interface.
 
 REPLACEMENT POINT (이지원):
-  Set USE_REAL_YOLO=1 to use trained weights.
-  YOLO_MODEL env var selects which model (default: yolo26n_best.pt).
+  Real YOLO auto-enables when a weights file exists under ./weights/.
+  Override with USE_REAL_YOLO=0 (force mock) or YOLO_MODEL=<filename>.
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 from typing import Callable, Iterator
@@ -19,8 +20,49 @@ from mock_data import mock_detect
 _model = None
 _WEIGHTS_DIR = Path(__file__).resolve().parent.parent / "weights"
 
-# Available models: yolo26n_best.pt, yolo26s_best.pt, rtdert_best.pt
+# Production model: yolo26n_best.pt (nano — fast, small, team-selected).
+# Also available for comparison/ablation:
+#   yolo26s_best.pt (small), rtdert_best.pt (RT-DETR baseline)
+# Switch via env: YOLO_MODEL=rtdert_best.pt
 _DEFAULT_MODEL = "yolo26n_best.pt"
+
+# Memoize the backend decision so the import check and the one-time warning
+# only happen once per process.
+_use_real_cached: bool | None = None
+
+
+def _resolve_use_real() -> bool:
+    """Pick the detection backend.
+
+    Explicit USE_REAL_YOLO env wins. Otherwise auto-enable real YOLO when
+    the selected weights file is present — so `python app.py` Just Works
+    after weights land, without anyone having to remember the env var.
+
+    If real YOLO is requested but `ultralytics` isn't importable, falls
+    back to mock with a one-time warning instead of letting the pipeline
+    crash mid-analysis. This keeps the UI demoable on machines that have
+    weights checked in but didn't `pip install -r requirements.txt`.
+    """
+    global _use_real_cached
+    if _use_real_cached is not None:
+        return _use_real_cached
+
+    env = os.environ.get("USE_REAL_YOLO")
+    if env is not None:
+        requested = (env == "1")
+    else:
+        model_name = os.environ.get("YOLO_MODEL", _DEFAULT_MODEL)
+        requested = (_WEIGHTS_DIR / model_name).exists()
+
+    if requested and importlib.util.find_spec("ultralytics") is None:
+        print("[detector] ultralytics not installed — falling back to mock "
+              "detector. To enable real YOLO: `pip install ultralytics`, or "
+              "set USE_REAL_YOLO=0 to silence this and keep mock.")
+        _use_real_cached = False
+        return False
+
+    _use_real_cached = requested
+    return requested
 
 
 def _load_model():
@@ -35,12 +77,18 @@ def _load_model():
     return _model
 
 
-def detect_video(
+def detect_video_stream(
     video_path: str,
     sample_every: int = 1,
-    progress: Callable[[float, str], None] | None = None,
-) -> list[FrameDetections]:
-    """Run detection over every Nth frame."""
+) -> Iterator[tuple[int, int, FrameDetections, list[FrameDetections]]]:
+    """Generator variant of detect_video for live-progress UIs.
+
+    Yields `(frame_idx, total_frames, latest_det, results_so_far)` after each
+    processed frame, so a caller can render real progress (frame count, per-
+    frame detections) as detection runs. `results_so_far` is the same list
+    object across yields; once the generator is exhausted it holds the
+    complete detection list — identical to what detect_video returns.
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {video_path}")
@@ -50,25 +98,42 @@ def detect_video(
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    use_real = os.environ.get("USE_REAL_YOLO") == "1"
     results: list[FrameDetections] = []
 
     frame_idx = 0
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        if frame_idx % sample_every == 0:
-            if use_real:
-                det = _detect_real_frame(frame, frame_idx, fps, width, height)
-            else:
-                det = mock_detect(frame_idx, fps, width, height)
-            results.append(det)
-            if progress and total > 0:
-                progress(frame_idx / total, f"Frame {frame_idx:,} / {total:,}")
-        frame_idx += 1
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if frame_idx % sample_every == 0:
+                # Resolve per-frame so a mid-run YOLO failure that flips
+                # _use_real_cached to False immediately switches to mock.
+                if _resolve_use_real():
+                    det = _detect_real_frame(frame, frame_idx, fps, width, height)
+                else:
+                    det = mock_detect(frame_idx, fps, width, height)
+                results.append(det)
+                yield frame_idx, total, det, results
+            frame_idx += 1
+    finally:
+        cap.release()
 
-    cap.release()
+
+def detect_video(
+    video_path: str,
+    sample_every: int = 1,
+    progress: Callable[[float, str], None] | None = None,
+) -> list[FrameDetections]:
+    """Run detection over every Nth frame. Returns the full FrameDetections list.
+
+    Thin wrapper over detect_video_stream for non-streaming callers (smoke
+    test, batch use). The streaming generator owns the detection loop.
+    """
+    results: list[FrameDetections] = []
+    for frame_idx, total, _det, results in detect_video_stream(video_path, sample_every):
+        if progress and total > 0:
+            progress(frame_idx / total, f"Frame {frame_idx:,} / {total:,}")
     return results
 
 
@@ -96,9 +161,22 @@ _CLS_MAP = {
 
 
 def _detect_real_frame(frame, frame_idx: int, fps: float, width: int, height: int) -> FrameDetections:
-    """Run YOLO26n / YOLO26s / RT-DETR on a single BGR frame."""
-    model = _load_model()
-    results = model(frame, verbose=False)[0]
+    """Run YOLO26n / YOLO26s / RT-DETR on a single BGR frame.
+
+    If model loading or inference fails for any reason (missing dep, corrupt
+    weights, CUDA error, etc.), we flip the global backend cache to mock
+    and return a mock detection — so the next frame onward stays on mock
+    and the demo doesn't crash mid-analysis.
+    """
+    global _use_real_cached
+    try:
+        model = _load_model()
+        results = model(frame, verbose=False)[0]
+    except Exception as e:
+        print(f"[detector] real YOLO failed ({type(e).__name__}: {e}) — "
+              f"switching to mock for the rest of this session.")
+        _use_real_cached = False
+        return mock_detect(frame_idx, fps, width, height)
 
     dets: list[Detection] = []
     for box in results.boxes:

@@ -1,1 +1,1 @@
-"""DriveCoach AI — UI components (theme, panels, timeline)."""
+"""BackMirror — UI components (theme, screens)."""

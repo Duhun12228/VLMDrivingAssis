@@ -1,4 +1,4 @@
-"""DriveCoach AI — core analysis modules.
+"""BackMirror — core analysis modules.
 
 Replacement points for teammates:
 - core.detector.detect_video        ← 이지원 (YOLO26n / RT-DETR)

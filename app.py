@@ -1,4 +1,4 @@
-"""DriveCoach AI — main Gradio app.
+"""BackMirror — main Gradio app.
 
 The app is a 4-state machine:
 
@@ -17,13 +17,16 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
+import traceback
 import uuid
 
 import cv2
 import gradio as gr
 
-from core.detector import detect_video
+from core.detector import detect_video_stream
 from core.event_extractor import extract_events
+from core.history import delete_analysis, load_prior, load_recent, save_analysis
 from core.overlay import render_annotated_video
 from core.scorer import calculate_score
 from core.video_utils import normalize_for_browser
@@ -31,6 +34,8 @@ from core.vlm import generate_coaching
 
 from ui.screens import (
     analyzing_screen_html,
+    error_results_html,
+    history_screen_html,
     idle_hero_html,
     ready_screen_html,
     results_screen_html,
@@ -49,166 +54,6 @@ from ui.theme import CUSTOM_CSS, build_theme
 DC_BOOT_JS = """
 () => {
   console.log('[DC] boot script attached');
-
-  // ─── ANALYZING-screen demo animation ───
-  // Plays a 12-second timeline that loops: progress, live bboxes, counters,
-  // pipeline steps. Cleaned up — no preview cards, no toasts, no scan beam.
-  // The four main signals (title rotation, progress bar, counters ramping,
-  // live bboxes) tell the story; everything else was noise.
-  // Triggered by bootDC() when .analyz-root first becomes visible.
-  function startAnalyzAnim(root) {
-    const $ = (id) => root.querySelector('#' + id);
-    const TOTAL_FRAMES = 300;
-    const DURATION_MS = 12000;
-    // easeOutQuart — fast start, smooth settle (feels more "alive" than linear)
-    const ease = (x) => 1 - Math.pow(1 - x, 4);
-
-    // 5 keyframes of bbox positions for the live overlay
-    const bboxFrames = [
-      [
-        { x:720,  y:430, w:200, h:130, label:'VEHICLE · ID#04 · 0.97', cls:'' },
-        { x:1100, y:500, w:260, h:160, label:'VEHICLE · ID#07 · 0.93', cls:'' },
-        { x:760,  y:410, w:80,  h:56,  label:'VEHICLE · ID#12 · FAR · 0.81', cls:'amber' },
-      ],
-      [
-        { x:700,  y:440, w:215, h:135, label:'VEHICLE · ID#04 · 0.96', cls:'' },
-        { x:1130, y:510, w:260, h:160, label:'VEHICLE · ID#07 · 0.94', cls:'' },
-        { x:760,  y:415, w:80,  h:56,  label:'VEHICLE · ID#12 · 0.83', cls:'amber' },
-        { x:540,  y:580, w:70,  h:70,  label:'TWO-WHEELED · ID#15 · 0.88', cls:'amber' },
-      ],
-      [
-        { x:690,  y:446, w:224, h:142, label:'VEHICLE · ID#04 · 0.95', cls:'' },
-        { x:1150, y:514, w:264, h:164, label:'VEHICLE · ID#07 · 0.94', cls:'' },
-        { x:520,  y:575, w:80,  h:76,  label:'TWO-WHEELED · ID#15 · 0.90', cls:'amber' },
-        { x:950,  y:600, w:60,  h:80,  label:'PEDESTRIAN · ID#21 · 0.84', cls:'' },
-      ],
-      [
-        { x:680,  y:450, w:232, h:148, label:'VEHICLE · ID#04 · 0.96', cls:'' },
-        { x:1170, y:520, w:268, h:168, label:'VEHICLE · ID#07 · 0.92', cls:'' },
-        { x:500,  y:568, w:92,  h:84,  label:'TWO-WHEELED · ID#15 · CLOSE', cls:'risk' },
-        { x:940,  y:595, w:64,  h:86,  label:'PEDESTRIAN · ID#21 · 0.86', cls:'' },
-      ],
-      [
-        { x:668,  y:458, w:244, h:152, label:'VEHICLE · ID#04 · 0.97', cls:'' },
-        { x:1200, y:528, w:270, h:170, label:'VEHICLE · ID#07 · 0.95', cls:'' },
-        { x:480,  y:560, w:102, h:90,  label:'TWO-WHEELED · ID#15 · RISK', cls:'risk' },
-      ],
-    ];
-    const overlay = $('analyz-overlay');
-    const NS = 'http://www.w3.org/2000/svg';
-    function drawFrame(idx) {
-      if (!overlay) return;
-      overlay.innerHTML = '';
-      bboxFrames[idx % bboxFrames.length].forEach((b, i) => {
-        const r = document.createElementNS(NS,'rect');
-        r.setAttribute('class','analyz-bbox' + (b.cls ? ' ' + b.cls : ''));
-        r.setAttribute('x', b.x); r.setAttribute('y', b.y);
-        r.setAttribute('width', b.w); r.setAttribute('height', b.h);
-        r.style.animationDelay = (i*40) + 'ms';
-        overlay.appendChild(r);
-        const t = document.createElementNS(NS,'text');
-        t.setAttribute('class','analyz-tag' + (b.cls ? ' ' + b.cls : ''));
-        t.setAttribute('x', b.x); t.setAttribute('y', b.y - 6);
-        t.textContent = b.label;
-        t.style.animationDelay = ((i*40) + 80) + 'ms';
-        overlay.appendChild(t);
-      });
-    }
-
-    const titleStages = [
-      { until: 0.25, text: '읽고 있습니다.' },
-      { until: 0.65, text: '추적하고 있습니다.' },
-      { until: 0.90, text: '패턴을 분석합니다.' },
-      { until: 1.00, text: '코칭을 작성합니다.' },
-      { until: 99,   text: '거의 완성됐어요.' },
-    ];
-    const accent = $('analyz-title-accent');
-    if (accent) {
-      accent.style.transition = 'opacity .55s ease, transform .55s ease';
-      accent.style.display = 'inline-block';
-    }
-    function updateTitle(p) {
-      const stage = titleStages.find(s => p < s.until) || titleStages.at(-1);
-      if (accent && accent.dataset.cur !== stage.text) {
-        accent.style.opacity = '0';
-        accent.style.transform = 'translateY(6px)';
-        setTimeout(() => {
-          accent.textContent = stage.text;
-          accent.style.opacity = '1';
-          accent.style.transform = 'translateY(0)';
-          accent.dataset.cur = stage.text;
-        }, 280);
-      }
-    }
-
-    const plSteps = [$('analyz-pl0'), $('analyz-pl1'), $('analyz-pl2'), $('analyz-pl3')];
-    function setPl(idx, state, text) {
-      const el = plSteps[idx];
-      if (!el) return;
-      el.className = 'analyz-pl-step ' + state;
-      const s = el.querySelector('.analyz-pl-status');
-      if (state === 'current') s.innerHTML = '<span class="analyz-pulse-dot"></span>진행 중';
-      else if (state === 'done') s.textContent = text || '완료';
-      else s.textContent = '대기';
-    }
-    function updatePipeline(p) {
-      if (p < 0.18)       { setPl(0,'current'); setPl(1,'pending'); setPl(2,'pending'); setPl(3,'pending'); }
-      else if (p < 0.68)  { setPl(0,'done','완료 · 4.8s'); setPl(1,'current'); setPl(2,'pending'); setPl(3,'pending'); }
-      else if (p < 0.92)  { setPl(0,'done','완료 · 4.8s'); setPl(1,'done','완료 · 14.6s'); setPl(2,'current'); setPl(3,'pending'); }
-      else if (p < 1)     { setPl(0,'done','완료 · 4.8s'); setPl(1,'done','완료 · 14.6s'); setPl(2,'done','완료 · 7.9s'); setPl(3,'current'); }
-      else                { setPl(0,'done','완료 · 4.8s'); setPl(1,'done','완료 · 14.6s'); setPl(2,'done','완료 · 7.9s'); setPl(3,'done','완료 · 2.1s'); }
-    }
-
-    let startT = performance.now();
-    let lastBbox = 0, bboxIdx = 0;
-    function tick(now) {
-      // If the screen got hidden / removed, stop
-      if (!root.isConnected || root.offsetParent === null) {
-        root.__animated = false;
-        return;
-      }
-      let elapsed = now - startT;
-      if (elapsed > DURATION_MS + 1500) {
-        // Loop while we wait for Gradio to swap to RESULTS
-        startT = now; elapsed = 0; bboxIdx = 0; lastBbox = 0;
-      }
-      const t  = Math.min(1, elapsed / DURATION_MS);  // raw linear progress
-      const p  = ease(t);                              // eased for display
-      const pct = Math.min(100, Math.floor(p*100));
-      const fr  = Math.min(TOTAL_FRAMES, Math.floor(p*TOTAL_FRAMES));
-
-      const setText = (id, v) => { const e = $(id); if (e) e.textContent = v; };
-      setText('analyz-pct', pct);
-      const fill = $('analyz-fill'); if (fill) fill.style.width = pct + '%';
-      const etaSec = Math.max(0, Math.ceil((1 - t) * 12));
-      setText('analyz-eta', etaSec > 0 ? '약 ' + etaSec + '초' : '마무리');
-      setText('analyz-frame', fr + ' / ' + TOTAL_FRAMES);
-      setText('analyz-fps', (28 + Math.sin(elapsed/420)*2).toFixed(0));
-
-      // Counters ramp up smoothly via the eased progress
-      const veh  = Math.min(18, Math.round(p * 18));
-      const ped  = Math.round(p * 6);
-      const two  = Math.round(p * 4);
-      const risk = t < 0.4 ? 0 : Math.round((t - 0.4) * 5);
-      setText('analyz-c-veh', veh);
-      setText('analyz-c-ped', ped);
-      setText('analyz-c-two', two);
-      setText('analyz-c-risk', risk);
-      const det = $('analyz-hud-det');
-      if (det) det.innerHTML = 'DET <span style="color:var(--signal)">' + (veh+ped+two) + '</span>';
-      setText('analyz-hud-tc', (t*10).toFixed(2).padStart(5,'0') + 's');
-      setText('analyz-hud-frame', 'FRAME ' + fr + ' / ' + TOTAL_FRAMES);
-      setText('analyz-sub', '지금 ' + fr + '번째 프레임 · 차량 ' + veh + '개 추적 중');
-
-      updateTitle(t);
-      updatePipeline(t);
-
-      if (now - lastBbox > 750) { drawFrame(bboxIdx++); lastBbox = now; }
-      requestAnimationFrame(tick);
-    }
-    drawFrame(0);
-    requestAnimationFrame(tick);
-  }
 
   function bootDC() {
     // --- 1. NAV scrolled state ---
@@ -295,6 +140,193 @@ DC_BOOT_JS = """
         document.querySelector('.dc-results-again-hit')?.click();
       });
     }
+
+    // --- 3f. RESULTS timeline + moment cards → seek the annotated video ---
+    // Any element with `data-tc` (timeline marker, label button, moment card)
+    // becomes a seek target. Click → set video.currentTime + play. Also
+    // updates the playhead position on timeupdate so the white tick rides
+    // along with playback.
+    const resultsVideo = document.getElementById('dc-results-video');
+    const resultsTrack = document.getElementById('dc-results-track');
+    if (resultsVideo && resultsTrack && !resultsTrack.__bound) {
+      resultsTrack.__bound = true;
+      const seekFromEl = (el) => {
+        const tc = parseFloat(el.dataset.tc);
+        if (Number.isFinite(tc)) {
+          try {
+            resultsVideo.currentTime = tc;
+            resultsVideo.play().catch(() => {});
+          } catch (e) { /* ignore */ }
+          // visual feedback on labels
+          document.querySelectorAll('.timeline-labels button').forEach(b =>
+            b.classList.toggle('active', b === el)
+          );
+        }
+      };
+      document.querySelectorAll(
+        '.results-root [data-tc]'
+      ).forEach(el => {
+        if (el.__seekBound) return;
+        el.__seekBound = true;
+        el.addEventListener('click', e => {
+          e.preventDefault();
+          seekFromEl(el);
+        });
+      });
+
+      // Playhead that rides with playback
+      let ph = resultsTrack.querySelector('.playhead');
+      if (!ph) {
+        ph = document.createElement('span');
+        ph.className = 'playhead';
+        resultsTrack.appendChild(ph);
+      }
+      const updatePlayhead = () => {
+        const dur = resultsVideo.duration || 0;
+        if (dur > 0) {
+          ph.style.left = (100 * resultsVideo.currentTime / dur) + '%';
+        }
+      };
+      resultsVideo.addEventListener('timeupdate', updatePlayhead);
+      resultsVideo.addEventListener('loadedmetadata', updatePlayhead);
+    }
+
+    // --- 3d. ANALYZING cancel button → reset to IDLE ---
+    // The visible '분석 중단' button in the new analyzing nav. We don't
+    // actually interrupt the run_analysis generator (Gradio queues it to
+    // completion); the visible state just snaps back to IDLE and the
+    // generator's eventual output goes nowhere visible.
+    const analyzCancel = document.getElementById('analyz-cancel-btn');
+    if (analyzCancel && !analyzCancel.__bound) {
+      analyzCancel.__bound = true;
+      analyzCancel.addEventListener('click', () => {
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+
+    // --- 3e. HISTORY back button → reset to IDLE ---
+    // The visible '← 홈' button in the history nav (and the history logo)
+    // bridge to the hidden home button so there's always a way back.
+    const historyBack = document.getElementById('history-back-btn');
+    if (historyBack && !historyBack.__bound) {
+      historyBack.__bound = true;
+      historyBack.addEventListener('click', () => {
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+
+    // --- 3g. HISTORY node card → drill in (re-show past RESULTS) ---
+    // Each .node-card carries data-session-id. Click anywhere on the card
+    // (except on the × delete button) → fill hidden Textbox + click hidden
+    // gr.Button → go_history_drilldown() server-side navigates to RESULTS
+    // with that record's data.
+    function fillTextboxAndClick(targetSelector, btnSelector, value) {
+      const target = document.querySelector(
+        targetSelector + ' textarea, ' + targetSelector + ' input'
+      );
+      if (!target) {
+        console.warn('[DC] textbox not found:', targetSelector);
+        return;
+      }
+      const proto = target.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(target, value);
+      else target.value = value;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      setTimeout(() => document.querySelector(btnSelector)?.click(), 40);
+    }
+    document.querySelectorAll('.node-card').forEach(card => {
+      if (card.__bound) return;
+      card.__bound = true;
+      card.addEventListener('click', e => {
+        // Don't fire when the user clicked the × delete button
+        if (e.target.closest('.nc-del')) return;
+        const sid = card.dataset.sessionId || '';
+        if (!sid) return;
+        fillTextboxAndClick(
+          '#dc-history-drill-target',
+          '.dc-history-drill-hit',
+          sid
+        );
+      });
+      // Keyboard activation (Enter / Space) since card has role="button"
+      card.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        const sid = card.dataset.sessionId || '';
+        if (!sid) return;
+        fillTextboxAndClick(
+          '#dc-history-drill-target',
+          '.dc-history-drill-hit',
+          sid
+        );
+      });
+    });
+
+    // --- 3e. HISTORY card × button → confirm + delete bridge ---
+    // Each .nc-del (v6) or .history-card-del (legacy) carries data-session-id.
+    // We confirm, fill the hidden Textbox (#dc-history-delete-target) with
+    // that id, fire 'input' so Svelte picks it up, then click the hidden
+    // gr.Button which calls go_history_delete() server-side. The handler
+    // re-renders history_html so the card disappears in place.
+    document.querySelectorAll('.history-card-del, .nc-del').forEach(btn => {
+      if (btn.__bound) return;
+      btn.__bound = true;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        e.preventDefault();
+        const sid = btn.dataset.sessionId || '';
+        const nth = btn.dataset.nth || '';
+        if (!sid) return;
+        const label = nth && nth !== sid ? `#${nth} 분석` : '이 분석';
+        if (!confirm(`${label}을 삭제할까요?\\n되돌릴 수 없습니다.`)) return;
+        const target = document.querySelector(
+          '#dc-history-delete-target textarea, ' +
+          '#dc-history-delete-target input'
+        );
+        if (!target) {
+          console.warn('[DC] delete target textbox not found');
+          return;
+        }
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          target.tagName === 'TEXTAREA'
+            ? window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        if (nativeSetter) nativeSetter.call(target, sid);
+        else target.value = sid;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        // Give Svelte one tick to commit the value before clicking the btn
+        setTimeout(() => {
+          document.querySelector('.dc-history-delete-hit')?.click();
+        }, 40);
+      });
+    });
+
+    // --- 3c. HISTORY navigation bridges ---
+    // The visible '기록' link in the IDLE nav → hidden gr.Button which calls
+    // go_history() server-side. From the HISTORY page itself, the upload
+    // CTA (both empty-state and bottom) sends the user back to IDLE so they
+    // can drop a file into the v3 dropzone.
+    const historyLink = document.getElementById('dc-history-link');
+    if (historyLink && !historyLink.__bound) {
+      historyLink.__bound = true;
+      historyLink.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector('.dc-history-hit')?.click();
+      });
+    }
+    const historyUpload = document.getElementById('history-upload-btn');
+    if (historyUpload && !historyUpload.__bound) {
+      historyUpload.__bound = true;
+      historyUpload.addEventListener('click', () => {
+        // Return to IDLE — the dropzone lives there
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
     // Enter while the Ready screen is visible → start analysis
     if (!window.__readyEnterBound) {
       window.__readyEnterBound = true;
@@ -312,22 +344,22 @@ DC_BOOT_JS = """
       });
     }
 
-    // --- 3c. ANALYZING screen demo animation ---
-    // The v4 Analyzing layout has counters / progress / live bboxes / pipeline
-    // steps / preview cards that all animate over ~30s. The real analysis
-    // runs in Python and may finish before or after that — we just loop
-    // the animation until Gradio swaps to the RESULTS screen.
-    const analyzRoot = document.querySelector('.analyz-root');
-    if (analyzRoot && !analyzRoot.__animated && analyzRoot.offsetParent !== null) {
-      analyzRoot.__animated = true;
-      startAnalyzAnim(analyzRoot);
-    }
+    // (ANALYZING progress is now rendered server-side by the run_analysis
+    //  generator — no client-side animation. See app.run_analysis.)
 
     // --- 4. BRAND click → invisible home_btn → reset to IDLE ---
+    // Covers every screen's logo variant (.brand on IDLE/Ready,
+    // .analyz-brand / .results-brand / .history-brand on the others). On IDLE
+    // the hero exists → we leave the anchor's scroll-to-top behavior; on any
+    // other screen, clicking the logo resets to the first screen.
     const homeBtn = document.querySelector('.dc-home-hit');
-    document.querySelectorAll('.dc-v3-root .brand').forEach(brand => {
+    document.querySelectorAll(
+      '.dc-v3-root .brand, .dc-v3-root .analyz-brand,'
+      + ' .dc-v3-root .results-brand, .dc-v3-root .history-brand'
+    ).forEach(brand => {
       if (brand.__bound) return;
       brand.__bound = true;
+      brand.style.cursor = 'pointer';
       brand.addEventListener('click', e => {
         const idleVisible = document.querySelector('.dc-v3-root .hero');
         if (!idleVisible && homeBtn) {
@@ -541,6 +573,80 @@ def _extract_event_stills(video_path: str, events) -> dict[int, str]:
     return out
 
 
+def _extract_poster(video_path: str) -> str:
+    """Write the first frame as a jpg in temp; return its absolute path.
+
+    The ANALYZING screen shows this static poster (not an autoplaying clip)
+    so that re-rendering the screen on every streaming progress update
+    doesn't restart video playback. Returns "" if the frame can't be read.
+    """
+    if not video_path or not os.path.exists(video_path):
+        return ""
+    cap = cv2.VideoCapture(video_path)
+    ok, frame = cap.read()
+    cap.release()
+    if not ok or frame is None:
+        return ""
+    out_path = os.path.join(
+        tempfile.gettempdir(), f"dc_poster_{os.path.basename(video_path)}.jpg"
+    )
+    cv2.imwrite(out_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+    return out_path
+
+
+# Brand colors in BGR (cv2 native order) for live bbox burn-in.
+_BBOX_BGR_SIGNAL = (154, 229, 0)     # signal green
+_BBOX_BGR_AMBER  = (71, 181, 255)    # amber
+_LABEL_TEXT_DARK = (24, 34, 0)       # dark green for text on signal background
+_LABEL_TEXT_AMBER_DARK = (0, 23, 42) # dark for text on amber background
+
+
+def _draw_live_bboxes(frame, det) -> None:
+    """Mutates `frame` in place: draws signal/amber bboxes + labels for the
+    detections in `det`. Capped at 12 boxes so the frame never looks like
+    graffiti. Used by _render_live_poster to give the analyzing screen its
+    'system is actually looking at this frame' feel."""
+    if not det or not det.detections:
+        return
+    for d in det.detections[:12]:
+        x1, y1, x2, y2 = (int(v) for v in d.bbox)
+        if (x2 - x1) < 4 or (y2 - y1) < 4:
+            continue
+        if d.cls in ("bike", "motor", "rider"):
+            box_color, text_color = _BBOX_BGR_AMBER, _LABEL_TEXT_AMBER_DARK
+        else:
+            box_color, text_color = _BBOX_BGR_SIGNAL, _LABEL_TEXT_DARK
+        cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+        label = f"{d.cls.upper()} {d.confidence:.2f}"
+        # Label background bar — width sized to text length, sitting above the bbox
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        bg_h = th + 6
+        bg_y2 = max(0, y1)
+        bg_y1 = max(0, y1 - bg_h)
+        cv2.rectangle(frame, (x1, bg_y1), (x1 + tw + 8, bg_y2), box_color, -1)
+        cv2.putText(frame, label, (x1 + 4, bg_y2 - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, text_color, 1, cv2.LINE_AA)
+
+
+def _render_live_poster(cap, fidx: int, det, slot_path: str) -> str:
+    """Read frame `fidx` from an already-open cv2 capture, draw the current
+    detections on it, write to `slot_path`. Returns the path on success, ""
+    on failure. The caller rotates between two slot paths so the browser
+    never serves a cached version."""
+    if cap is None or not cap.isOpened():
+        return ""
+    cap.set(cv2.CAP_PROP_POS_FRAMES, fidx)
+    ok, frame = cap.read()
+    if not ok or frame is None:
+        return ""
+    _draw_live_bboxes(frame, det)
+    try:
+        cv2.imwrite(slot_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 78])
+    except OSError:
+        return ""
+    return slot_path
+
+
 # ─── State transitions ────────────────────────────────────────
 
 def go_idle():
@@ -550,9 +656,89 @@ def go_idle():
         gr.update(visible=False),      # uploaded_screen
         gr.update(visible=False),      # analyzing_screen
         gr.update(visible=False),      # results_screen
+        gr.update(visible=False),      # history_screen
         gr.update(value=None),         # file_in (clear)
         None,                          # video_state
         ready_screen_html(),           # ready_html (reset)
+    )
+
+
+def go_history():
+    """Any → HISTORY. Loads recent analyses fresh each time so the page
+    reflects whatever was just saved by run_analysis."""
+    records = load_recent(limit=20)
+    return (
+        gr.update(visible=False),      # idle_screen
+        gr.update(visible=False),      # uploaded_screen
+        gr.update(visible=False),      # analyzing_screen
+        gr.update(visible=False),      # results_screen
+        gr.update(visible=True),       # history_screen
+        history_screen_html(records=records),  # history_html
+    )
+
+
+def go_history_delete(target_session_id: str):
+    """Delete the history record with the given session id, then re-render
+    the HISTORY page in place. The target id comes from a hidden textbox
+    that DC_BOOT_JS fills before triggering this. Stays on HISTORY screen
+    (no visibility change) but refreshes the html so the card is gone."""
+    delete_analysis((target_session_id or "").strip())
+    records = load_recent(limit=20)
+    return (
+        history_screen_html(records=records),  # history_html
+        "",                                    # clear delete_target textbox
+    )
+
+
+def go_history_drilldown(target_session_id: str):
+    """HISTORY card click → re-show that past analysis as RESULTS.
+
+    Looks up the record by session id, computes its prior (the analysis
+    chronologically just before it), and re-renders results_screen_html
+    with that data. Video path + event stills are empty (those temp files
+    are long gone) — results_screen_html already handles that gracefully
+    (no video block, fallback divs on cards). Stepper still shows all-done.
+    """
+    sid = (target_session_id or "").strip()
+    records = load_recent(limit=99)
+    target = next((r for r in records if r.session_id == sid), None)
+    if target is None:
+        # Record vanished (e.g. user deleted in another tab) — just re-render
+        # HISTORY in place and don't navigate.
+        return (
+            gr.update(),                                # idle (no change)
+            gr.update(),                                # uploaded
+            gr.update(),                                # analyzing
+            gr.update(),                                # results
+            gr.update(),                                # history (stay)
+            history_screen_html(records=records),       # history_html refresh
+            gr.update(),                                # results_html
+            "",                                         # clear drill textbox
+        )
+    # Find prior: record immediately older (records is newest-first)
+    idx = records.index(target)
+    prior = records[idx + 1] if idx + 1 < len(records) else None
+
+    html = results_screen_html(
+        video_path="",                # annotated video file is long gone
+        filename=target.video_name,
+        duration=target.duration,
+        score=target.score,
+        events=target.events,
+        coachings=target.coachings,
+        event_stills={},              # event stills were temp jpgs, also gone
+        session_id=target.session_id,
+        prior=prior,
+    )
+    return (
+        gr.update(visible=False),     # idle
+        gr.update(visible=False),     # uploaded
+        gr.update(visible=False),     # analyzing
+        gr.update(visible=True),      # results ← navigate here
+        gr.update(visible=False),     # history
+        gr.update(),                  # history_html (no change needed)
+        html,                         # results_html ← past analysis
+        "",                           # clear drill textbox
     )
 
 
@@ -561,6 +747,7 @@ def on_file_uploaded(file_obj, progress=gr.Progress()):
     if file_obj is None:
         return (
             gr.update(visible=True),
+            gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
@@ -581,6 +768,7 @@ def on_file_uploaded(file_obj, progress=gr.Progress()):
         gr.update(visible=True),
         gr.update(visible=False),
         gr.update(visible=False),
+        gr.update(visible=False),                      # history_screen
         normalized,                                    # video_state
         ready_screen_html(
             video_path=normalized or "",
@@ -597,18 +785,23 @@ def on_file_uploaded(file_obj, progress=gr.Progress()):
 
 
 def go_analyzing(video_path):
-    """UPLOADED → ANALYZING. Toggles visibility AND populates the live
-    analysis screen with the current video's name + a fresh session id."""
+    """UPLOADED → ANALYZING. Shows the live screen at 0% and stashes session
+    metadata (sid + poster frame + name) that run_analysis reuses on every
+    streaming update, so the session id stays stable instead of flickering."""
     meta = _video_meta(video_path) if video_path else _video_meta("")
     sid = _new_session_id()
+    poster = _extract_poster(video_path) if video_path else ""
+    analyz_meta = {"sid": sid, "poster": poster, "name": meta["name"]}
     return (
         gr.update(visible=False),   # uploaded_screen
         gr.update(visible=True),    # analyzing_screen
         analyzing_screen_html(
-            video_path=video_path or "",
+            poster_path=poster,
             name=meta["name"],
             session_id=sid,
+            phase="detect",
         ),                          # analyzing_html
+        analyz_meta,                # analyz_state
     )
 
 
@@ -622,47 +815,130 @@ def go_results():
 
 # ─── Analysis pipeline ────────────────────────────────────────
 
-def _progress_msg(phase: str, detail: str = "") -> str:
-    """Toss-style narrative progress copy."""
-    base = {
-        "detect":   "🚗  도로 위 객체를 찾고 있어요",
-        "events":   "✨  의미 있는 순간을 골라내는 중이에요",
-        "vlm":      "💬  VLM이 위험 상황을 분석하고 있어요",
-        "score":    "📊  운전 점수를 계산하고 있어요",
-        "render":   "🎬  주석 영상을 만드는 중이에요",
-        "done":     "✅  분석이 끝났어요",
-    }[phase]
-    return f"{base}{f' · {detail}' if detail else ''}"
+# Detection occupies 0–60% of the bar; the remaining phases map onto fixed
+# marks past that, so the % only ever moves forward through real work.
+_DETECT_PCT = 60
+
+# events/vlm/score finish in milliseconds, so without a hold the stepper
+# flashes 02→03→04 instantly after the long detection phase. This brief
+# dwell lets each phase label stay readable. It is NOT fabricated progress —
+# the real work runs during/right after each hold; we just pace the display.
+_PHASE_DWELL = 0.45
 
 
-def run_analysis(video_path: str, progress=gr.Progress()):
-    """End-to-end pipeline. Returns the single RESULTS HTML blob."""
+def run_analysis(video_path: str, analyz_meta: dict | None = None):
+    """Public entry — wraps the pipeline generator so a mid-analysis exception
+    surfaces a graceful error screen instead of freezing the live ANALYZING
+    screen during a demo. Streams the impl's yields through unchanged."""
+    sid = (analyz_meta or {}).get("sid") or _new_session_id()
+    try:
+        yield from _run_analysis_impl(video_path, analyz_meta)
+    except Exception:
+        traceback.print_exc()
+        yield (gr.update(), error_results_html(session_id=sid))
+
+
+def _run_analysis_impl(video_path: str, analyz_meta: dict | None = None):
+    """End-to-end pipeline as a GENERATOR that streams real progress.
+
+    Each yield is `(analyzing_html_update, results_html_update)`. While the
+    pipeline runs we update only the ANALYZING html with live, real numbers
+    (frame counter, processing fps, per-class detection counts, pipeline
+    phase). The final yield leaves ANALYZING untouched and fills RESULTS.
+
+    Nothing here is faked — the bar reflects the detection generator's true
+    position, and each phase label appears exactly when that work runs.
+    """
     if not video_path:
-        return results_screen_html()
+        yield gr.update(), results_screen_html()
+        return
 
-    # Phase 1 — detection
-    progress(0.05, desc=_progress_msg("detect"))
-    frames = detect_video(
-        video_path,
-        sample_every=2,
-        progress=lambda p, msg: progress(0.05 + p * 0.55,
-                                          desc=_progress_msg("detect", msg)),
-    )
+    meta = analyz_meta or {}
+    sid = meta.get("sid") or _new_session_id()
+    poster = meta.get("poster", "")
+    name = meta.get("name", "")
 
-    # Phase 2 — events
-    progress(0.65, desc=_progress_msg("events"))
+    # Two-slot rotation for the live-frame poster: alternating filenames
+    # prevent the browser from serving a cached jpg when we overwrite.
+    live_slots = [
+        os.path.join(tempfile.gettempdir(), f"dc_live_{sid}_a.jpg"),
+        os.path.join(tempfile.gettempdir(), f"dc_live_{sid}_b.jpg"),
+    ]
+    # Hold the video capture open across all live-poster reads so seek/read
+    # cost is amortized (~6 reads total per video).
+    live_cap = cv2.VideoCapture(video_path) if video_path else None
+
+    def screen(**kw):
+        return analyzing_screen_html(
+            poster_path=kw.pop("poster_path", poster),
+            name=name, session_id=sid, **kw,
+        )
+
+    # ── Phase 1: detection — streams real per-frame progress (0–60%) ──
+    start = time.time()
+    frames: list = []
+    veh_cum = ped_cum = two_cum = 0  # cumulative across processed frames
+    last_emit = -999
+    live_version = 0
+    current_poster = poster
+    frame_w = frame_h = 0
+    for fidx, total, det, frames in detect_video_stream(video_path, sample_every=2):
+        # Track first known dimensions for the bbox SVG fallback
+        if frame_w == 0 and det:
+            frame_w, frame_h = det.width, det.height
+        # Accumulate per-class detection counts. With no tracker, this is a
+        # detection count (not unique-object count) — labels frame it as such.
+        veh_cum += sum(1 for d in det.detections if d.cls in ("car", "truck", "bus"))
+        ped_cum += sum(1 for d in det.detections if d.cls == "person")
+        two_cum += sum(1 for d in det.detections if d.cls in ("bike", "motor", "rider"))
+        n = len(frames)
+        if n - last_emit >= 6:          # throttle: ~every 6 processed frames
+            last_emit = n
+            elapsed = max(1e-6, time.time() - start)
+            proc_fps = n / elapsed
+            pct = (fidx / total * _DETECT_PCT) if total else 0
+            eta = int(elapsed * (100 - pct) / pct) if pct > 5 else 0
+            # Burn the current frame + bboxes to the rotating slot so the
+            # right-side video stage shows what the model is actually looking at.
+            live_version += 1
+            slot = live_slots[live_version % 2]
+            new_poster = _render_live_poster(live_cap, fidx, det, slot)
+            if new_poster:
+                current_poster = new_poster
+            yield (
+                screen(pct=int(pct), frame_idx=fidx, total_frames=total,
+                       proc_fps=proc_fps, eta_sec=eta,
+                       veh=veh_cum, ped=ped_cum, two=two_cum,
+                       risk=0, phase="detect",
+                       poster_path=current_poster),
+                gr.update(),
+            )
+
+    if live_cap is not None:
+        live_cap.release()
+
+    # ── Phase 2: event extraction ──
+    yield (screen(pct=65, veh=veh_cum, ped=ped_cum, two=two_cum,
+                  phase="events", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)  # keep "이벤트 추출" readable (work below is instant)
     events = extract_events(frames)
+    n_risk = sum(1 for e in events if e.severity == "danger")
 
-    # Phase 3 — VLM coaching (event frames only)
-    progress(0.72, desc=_progress_msg("vlm", f"{len(events)}건"))
+    # ── Phase 3: VLM coaching (event frames only) ──
+    yield (screen(pct=72, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+                  phase="vlm", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)  # keep "코칭 작성" readable
     coachings = [generate_coaching(ev) for ev in events]
 
-    # Phase 4a — score
-    progress(0.80, desc=_progress_msg("score"))
+    # ── Phase 4a: score ──
+    yield (screen(pct=80, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+                  phase="score", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)  # keep "점수 산정" readable
     score = calculate_score(events)
 
-    # Phase 4b — annotated video
-    progress(0.85, desc=_progress_msg("render"))
+    # ── Phase 4b: annotated video + evidence stills ──
+    yield (screen(pct=88, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+                  phase="render", poster_path=current_poster), gr.update())
     det_by_idx = {f.frame_idx: f for f in frames}
     ev_by_idx = {ev.frame_idx: ev for ev in events}
     out_path = os.path.join(
@@ -670,23 +946,40 @@ def run_analysis(video_path: str, progress=gr.Progress()):
         f"drivecoach_out_{os.path.basename(video_path)}.mp4",
     )
     annotated = render_annotated_video(video_path, out_path, det_by_idx, ev_by_idx)
-
-    # Phase 4c — pull one still per event for the key-moment cards
-    progress(0.92, desc=_progress_msg("render", "evidence frames"))
     stills = _extract_event_stills(video_path, events)
 
-    meta = _video_meta(video_path)
-    progress(1.0, desc=_progress_msg("done"))
+    vmeta = _video_meta(video_path)
 
-    return results_screen_html(
-        video_path=annotated,
-        filename=meta["name"],
-        duration=meta["duration"],
-        score=score,
-        events=events,
-        coachings=coachings,
-        event_stills=stills,
-        session_id=_new_session_id(),
+    # Load the previous analysis BEFORE saving the current one — otherwise
+    # "prior" would be the just-finished run itself. Then persist this run
+    # so the next analysis can compare against it.
+    prior = load_prior()
+    try:
+        save_analysis(
+            session_id=sid,
+            video_name=vmeta["name"],
+            duration=vmeta["duration"],
+            score=score,
+            events=events,
+            coachings=coachings,
+        )
+    except OSError:
+        pass  # history persistence is best-effort, never block the report
+
+    # ── Done: fill the RESULTS screen (ANALYZING left as-is) ──
+    yield (
+        gr.update(),
+        results_screen_html(
+            video_path=annotated,
+            filename=vmeta["name"],
+            duration=vmeta["duration"],
+            score=score,
+            events=events,
+            coachings=coachings,
+            event_stills=stills,
+            session_id=sid,
+            prior=prior,
+        ),
     )
 
 
@@ -698,14 +991,48 @@ def build_app() -> gr.Blocks:
     # doesn't auto-invoke that function. A <script> tag is guaranteed to
     # execute as soon as the document loads.
     head_html = f"<script>(function(){{ ({DC_BOOT_JS})(); }})();</script>"
-    with gr.Blocks(title="DrivingAssis AI", head=head_html) as app:
-        # Invisible click target that the JS bridge calls when the brand
-        # is clicked from any non-IDLE screen (resets to IDLE).
+    with gr.Blocks(title="BackMirror", head=head_html) as app:
+        # Invisible click targets bridged by DC_BOOT_JS. These MUST live at
+        # the top level (not inside conditionally-visible Groups) because
+        # Gradio 6 removes invisible-Group children from the DOM entirely,
+        # so a button hidden via an enclosing group wouldn't exist to
+        # receive .click() before the group's first reveal.
+        # home_btn keeps its existing fixed-overlay positioning (see
+        # .dc-home-hit CSS). history_btn lives in an always-mounted hidden
+        # actions wrapper so it is in the DOM from boot but invisible.
         home_btn = gr.Button("home", elem_classes="dc-home-hit")
+        with gr.Group(elem_classes="dc-hidden-actions"):
+            history_btn = gr.Button("history", elem_classes="dc-history-hit")
+            # Carries the session_id JS just clicked × on. Read by go_history_delete.
+            # Must be visible=True so Gradio actually mounts it — the enclosing
+            # .dc-hidden-actions wrapper positions it off-screen anyway. With
+            # visible=False the component never renders and elem_id is unused.
+            history_delete_target = gr.Textbox(
+                value="", visible=True, interactive=True,
+                elem_id="dc-history-delete-target",
+                label=None, container=False, show_label=False,
+            )
+            history_delete_btn = gr.Button(
+                "history-delete", elem_classes="dc-history-delete-hit",
+            )
+            # Carries the session_id JS just clicked a node card on. Read
+            # by go_history_drilldown to navigate HISTORY → RESULTS for
+            # that record.
+            history_drill_target = gr.Textbox(
+                value="", visible=True, interactive=True,
+                elem_id="dc-history-drill-target",
+                label=None, container=False, show_label=False,
+            )
+            history_drill_btn = gr.Button(
+                "history-drill", elem_classes="dc-history-drill-hit",
+            )
 
         # State variable — currently unused (visibility drives everything),
         # but exposed in case we need to react to it from JS later.
         video_state = gr.State(None)
+        # Carries {sid, poster, name} from go_analyzing into the run_analysis
+        # generator so the live ANALYZING screen keeps a stable session id.
+        analyz_state = gr.State(None)
 
         # ───── IDLE — Runway-style landing page ─────────────
         # elem_classes="dc-naked" strips Gradio's gr.Group chrome
@@ -750,44 +1077,96 @@ def build_app() -> gr.Blocks:
                     "again", elem_classes="dc-results-again-hit",
                 )
 
+        # ───── HISTORY — '내 주행 기록' page (5th state) ─────
+        # Read-only view of past analyses, sparkline of score trend, and
+        # the top-3 repeated event categories. Triggered by the visible
+        # "기록" nav link in IDLE → top-level dc-history-hit button above.
+        # The empty-state / bottom CTA bridges back to IDLE through dc-home-hit.
+        with gr.Group(visible=False, elem_classes="dc-naked") as history_screen:
+            history_html = gr.HTML(history_screen_html())
+
         # ───── Wiring ───────────────────────────────────────
         # Both go_idle (reset) and on_file_uploaded (populate) share these
         # outputs: screen visibility + state + the single Ready HTML.
         screen_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen,
             file_in, video_state, ready_html,
         ]
         upload_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen,
             video_state, ready_html,
         ]
+        history_outputs = [
+            idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen, history_html,
+        ]
+
+        # All transitions opt out of Gradio's built-in "processing | N.Ns"
+        # status indicator that floats top-right; our own ANALYZING screen
+        # carries the only progress UI the user should see. (Gradio 6 calls
+        # this `show_progress="hidden"` per-listener.)
 
         # IDLE → UPLOADED
         file_in.upload(fn=on_file_uploaded, inputs=[file_in],
-                       outputs=upload_outputs)
+                       outputs=upload_outputs, show_progress="hidden")
 
         # UPLOADED → IDLE
-        back_btn.click(fn=go_idle, outputs=screen_outputs)
+        back_btn.click(fn=go_idle, outputs=screen_outputs,
+                       show_progress="hidden")
 
         # UPLOADED → ANALYZING → RESULTS
         analyze_btn.click(
             fn=go_analyzing,
             inputs=[video_state],
-            outputs=[uploaded_screen, analyzing_screen, analyzing_html],
+            outputs=[uploaded_screen, analyzing_screen, analyzing_html, analyz_state],
+            show_progress="hidden",
         ).then(
             fn=run_analysis,
-            inputs=[video_state],
-            outputs=[results_html],
+            inputs=[video_state, analyz_state],
+            outputs=[analyzing_html, results_html],
+            show_progress="hidden",
         ).then(
             fn=go_results,
             outputs=[analyzing_screen, results_screen],
+            show_progress="hidden",
         )
 
         # RESULTS → IDLE
-        new_analysis_btn.click(fn=go_idle, outputs=screen_outputs)
+        new_analysis_btn.click(fn=go_idle, outputs=screen_outputs,
+                               show_progress="hidden")
+
+        # Any → HISTORY (triggered by visible "기록" link in IDLE nav,
+        # bridged by DC_BOOT_JS to this hidden button)
+        history_btn.click(fn=go_history, outputs=history_outputs,
+                          show_progress="hidden")
+
+        # × on a history card → delete that record + re-render the page.
+        # DC_BOOT_JS sets the hidden Textbox value to the session_id, then
+        # clicks this hidden button; we read the textbox and act.
+        history_delete_btn.click(
+            fn=go_history_delete,
+            inputs=[history_delete_target],
+            outputs=[history_html, history_delete_target],
+            show_progress="hidden",
+        )
+
+        # Click on a node card → drill in to that past analysis (RESULTS).
+        history_drill_btn.click(
+            fn=go_history_drilldown,
+            inputs=[history_drill_target],
+            outputs=[
+                idle_screen, uploaded_screen, analyzing_screen, results_screen,
+                history_screen,
+                history_html, results_html, history_drill_target,
+            ],
+            show_progress="hidden",
+        )
 
         # Header brand → IDLE (from any screen)
-        home_btn.click(fn=go_idle, outputs=screen_outputs)
+        home_btn.click(fn=go_idle, outputs=screen_outputs,
+                       show_progress="hidden")
 
     return app
 
