@@ -44,6 +44,132 @@ _BRAND_SVG = (
 )
 
 
+_TEAM_MEMBERS = [
+    ("Detection", "이지원", "YOLO26n / RT-DETR 객체 검출 모델 학습·비교, 데이터 증강 실험",
+     ["YOLO26n", "RT-DETR", "BDD100K"]),
+    ("UI / UX", "박준형", "4-state 시네마틱 앱, 디자인 시스템, 실시간 분석·리포트 화면 설계",
+     ["Gradio", "Design System", "Report UX"]),
+    ("VLM", "김두훈", "Qwen2.5-VL 기반 3단계 추론 코칭(상황→위험→행동) 설계·연동",
+     ["Qwen2.5-VL", "DriveVLM", "CoT"]),
+]
+
+_TEAM_FAQ = [
+    ("내 블랙박스 영상은 어디에 저장되나요?",
+     "분석은 사용자의 PC에서 로컬로 처리됩니다. 영상이 외부 서버로 전송되지 않으며, "
+     "분석 기록은 본인 기기(~/.drivingassis)에만 저장돼요."),
+    ("BackMirror는 영상을 어떻게 분석하나요?",
+     "① YOLO로 차량·보행자·신호를 프레임 단위로 검출하고 ② 룰 기반으로 급제동·차선 이탈·"
+     "차간거리 부족 같은 위험 이벤트를 추출한 뒤 ③ VLM이 그 순간을 상황→위험→행동 3단계로 "
+     "해석해 코칭 문장을 만듭니다."),
+    ("TMAP 운전점수랑 뭐가 다른가요?",
+     "TMAP UBI는 '몇 점'이라는 결과를 줍니다. BackMirror는 '왜 위험했고 다음 주행에서 무엇을 "
+     "바꿔야 하는지'라는 맥락 코칭을 줍니다. 점수가 아니라 코치예요."),
+    ("점수는 어떻게 매겨지나요?",
+     "신호·차선·보행자·속도·안전거리 5개 카테고리가 각 100점에서 시작하고, 위험 이벤트마다 "
+     "감점됩니다. 카테고리별 최대 감점 폭은 제한돼 한 종류의 실수가 점수를 완전히 무너뜨리지 "
+     "않도록 했어요."),
+    ("객체를 추적(tracking)하나요?",
+     "현재는 프레임 단위 검출 기반입니다. 같은 객체에 ID를 부여하는 추적(ByteTrack 등)은 "
+     "로드맵에 있으며, 지금은 추적된 척하는 가짜 ID를 보여주지 않습니다."),
+]
+
+
+def team_screen_html() -> str:
+    """'팀 소개' standalone page (Toss team-page inspired, BackMirror dark tone).
+
+    Full-viewport hero → 4-step approach → member cards → Q&A accordion.
+    Reached via the '팀 소개' nav link (dc-team-link → dc-team-hit). The brand
+    and #team-back-btn both return to IDLE via dc-home-hit."""
+    members = "".join(
+        f'''
+        <article class="member">
+          <span class="m-role">{role}</span>
+          <h3>{name}</h3>
+          <p>{contrib}</p>
+          <div class="m-tags">{"".join(f"<span>{t}</span>" for t in tags)}</div>
+        </article>'''
+        for role, name, contrib, tags in _TEAM_MEMBERS
+    )
+    return f"""
+<div class="dc-v3-root team-root">
+  <nav class="team-nav">
+    {_brand_html()}
+    <button type="button" id="team-back-btn" class="team-back">홈으로</button>
+  </nav>
+
+  <section class="team-hero">
+    <span class="label label-signal">FVE3011 자동차인공지능 · Term Project</span>
+    <h1>블랙박스를 넘어,<br/><em class="accent">운전을 코치합니다.</em></h1>
+    <p>BackMirror는 위험한 순간을 찾아내는 데서 멈추지 않습니다.
+       왜 위험했는지, 다음 주행에서 무엇을 바꿔야 하는지까지 —
+       점수가 아니라 맥락을 건넵니다.</p>
+  </section>
+
+  <section class="team-approach">
+    <span class="label">Our Approach</span>
+    <div class="approach-flow">
+      <div class="af-step"><span class="af-num">01</span><b>검출</b>
+        <p>YOLO26n / RT-DETR로 차량·보행자·신호를 프레임 단위로 찾습니다.</p></div>
+      <div class="af-step"><span class="af-num">02</span><b>이벤트</b>
+        <p>룰 기반으로 급제동·차선 이탈·차간거리 부족을 추출합니다.</p></div>
+      <div class="af-step"><span class="af-num">03</span><b>코칭</b>
+        <p>VLM이 상황→위험→행동 3단계로 그 순간을 해석합니다.</p></div>
+      <div class="af-step"><span class="af-num">04</span><b>리포트</b>
+        <p>점수·근거 클립·한 줄 코칭을 한 페이지로 정리합니다.</p></div>
+    </div>
+    <p class="approach-diff">TMAP UBI는 <b>운전 점수</b>를 줍니다.
+       BackMirror는 <em class="accent">왜 위험했고 다음에 뭘 바꿀지</em>를 줍니다.</p>
+  </section>
+
+  <section class="team-members">
+    <span class="label">Team BackMirror</span>
+    <h2>세 사람이 만든 한 대의 코치.</h2>
+    <div class="member-grid">{members}</div>
+  </section>
+
+  <footer class="team-foot">© 2026 BACKMIRROR · Team BackMirror</footer>
+</div>
+"""
+
+
+def faq_screen_html() -> str:
+    """'자주 묻는 질문' standalone page — FAQ accordion (native <details>).
+    Reached via dc-faq-link → dc-faq-hit. Brand + #faq-back-btn → IDLE.
+    Reuses the .team-* layout classes (shared with the 팀 소개 page)."""
+    faq = "".join(
+        f'''
+        <details class="faq-item">
+          <summary><span>{q}</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9 L12 15 L18 9"/></svg>
+          </summary>
+          <p>{a}</p>
+        </details>'''
+        for q, a in _TEAM_FAQ
+    )
+    return f"""
+<div class="dc-v3-root team-root faq-root">
+  <nav class="team-nav">
+    {_brand_html()}
+    <button type="button" id="faq-back-btn" class="team-back">홈으로</button>
+  </nav>
+
+  <section class="team-hero faq-hero">
+    <span class="label label-signal">Q &amp; A</span>
+    <h1>자주 묻는<br/><em class="accent">질문.</em></h1>
+    <p>BackMirror를 처음 쓰는 분들이 가장 많이 궁금해하는 것들을 모았어요.</p>
+  </section>
+
+  <section class="team-faq">
+    <div class="faq-list">{faq}</div>
+  </section>
+
+  <footer class="team-foot">© 2026 BACKMIRROR · Team BackMirror</footer>
+</div>
+"""
+
+
 def _brand_html() -> str:
     """Shared brand mark — used in nav + footer."""
     return (
@@ -88,6 +214,8 @@ def _nav_html() -> str:
     <header class="nav" id="dc-nav">
       {_brand_html()}
       <div class="nav-actions">
+        <a class="nav-link" id="dc-team-link" href="#">팀 소개</a>
+        <a class="nav-link" id="dc-faq-link" href="#">자주 묻는 질문</a>
         <a class="nav-link" id="dc-history-link" href="#">기록</a>
         <a class="btn btn-primary" href="#dc-upload">영상 업로드 {arrow}</a>
       </div>

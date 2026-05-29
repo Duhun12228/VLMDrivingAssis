@@ -35,10 +35,12 @@ from core.vlm import generate_coaching
 from ui.screens import (
     analyzing_screen_html,
     error_results_html,
+    faq_screen_html,
     history_screen_html,
     idle_hero_html,
     ready_screen_html,
     results_screen_html,
+    team_screen_html,
 )
 from ui.theme import CUSTOM_CSS, build_theme
 
@@ -324,6 +326,40 @@ DC_BOOT_JS = """
       historyUpload.__bound = true;
       historyUpload.addEventListener('click', () => {
         // Return to IDLE — the dropzone lives there
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+    // '팀 소개' nav link → hidden dc-team-hit → go_team() server-side.
+    const teamLink = document.getElementById('dc-team-link');
+    if (teamLink && !teamLink.__bound) {
+      teamLink.__bound = true;
+      teamLink.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector('.dc-team-hit')?.click();
+      });
+    }
+    // TEAM '홈으로' button → reset to IDLE.
+    const teamBack = document.getElementById('team-back-btn');
+    if (teamBack && !teamBack.__bound) {
+      teamBack.__bound = true;
+      teamBack.addEventListener('click', () => {
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+    // '자주 묻는 질문' nav link → hidden dc-faq-hit → go_faq() server-side.
+    const faqLink = document.getElementById('dc-faq-link');
+    if (faqLink && !faqLink.__bound) {
+      faqLink.__bound = true;
+      faqLink.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector('.dc-faq-hit')?.click();
+      });
+    }
+    // FAQ '홈으로' button → reset to IDLE.
+    const faqBack = document.getElementById('faq-back-btn');
+    if (faqBack && !faqBack.__bound) {
+      faqBack.__bound = true;
+      faqBack.addEventListener('click', () => {
         document.querySelector('.dc-home-hit')?.click();
       });
     }
@@ -657,6 +693,8 @@ def go_idle():
         gr.update(visible=False),      # analyzing_screen
         gr.update(visible=False),      # results_screen
         gr.update(visible=False),      # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=False),      # faq_screen
         gr.update(value=None),         # file_in (clear)
         None,                          # video_state
         ready_screen_html(),           # ready_html (reset)
@@ -673,7 +711,40 @@ def go_history():
         gr.update(visible=False),      # analyzing_screen
         gr.update(visible=False),      # results_screen
         gr.update(visible=True),       # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=False),      # faq_screen
         history_screen_html(records=records),  # history_html
+    )
+
+
+def go_team():
+    """Any → TEAM ('팀 소개'). Triggered by the '팀 소개' nav link in IDLE,
+    bridged by DC_BOOT_JS to the hidden dc-team-hit button. The brand and
+    #team-back-btn return to IDLE via dc-home-hit."""
+    return (
+        gr.update(visible=False),      # idle_screen
+        gr.update(visible=False),      # uploaded_screen
+        gr.update(visible=False),      # analyzing_screen
+        gr.update(visible=False),      # results_screen
+        gr.update(visible=False),      # history_screen
+        gr.update(visible=True),       # team_screen
+        gr.update(visible=False),      # faq_screen
+        team_screen_html(),            # team_html
+    )
+
+
+def go_faq():
+    """Any → FAQ ('자주 묻는 질문'). Triggered by the '자주 묻는 질문' nav link
+    → hidden dc-faq-hit button. Brand and #faq-back-btn return to IDLE."""
+    return (
+        gr.update(visible=False),      # idle_screen
+        gr.update(visible=False),      # uploaded_screen
+        gr.update(visible=False),      # analyzing_screen
+        gr.update(visible=False),      # results_screen
+        gr.update(visible=False),      # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=True),       # faq_screen
+        faq_screen_html(),             # faq_html
     )
 
 
@@ -711,6 +782,8 @@ def go_history_drilldown(target_session_id: str):
             gr.update(),                                # analyzing
             gr.update(),                                # results
             gr.update(),                                # history (stay)
+            gr.update(),                                # team
+            gr.update(),                                # faq
             history_screen_html(records=records),       # history_html refresh
             gr.update(),                                # results_html
             "",                                         # clear drill textbox
@@ -736,6 +809,8 @@ def go_history_drilldown(target_session_id: str):
         gr.update(visible=False),     # analyzing
         gr.update(visible=True),      # results ← navigate here
         gr.update(visible=False),     # history
+        gr.update(visible=False),     # team
+        gr.update(visible=False),     # faq
         gr.update(),                  # history_html (no change needed)
         html,                         # results_html ← past analysis
         "",                           # clear drill textbox
@@ -750,7 +825,9 @@ def on_file_uploaded(file_obj, progress=gr.Progress()):
             gr.update(visible=False),
             gr.update(visible=False),
             gr.update(visible=False),
-            gr.update(visible=False),
+            gr.update(visible=False),      # history_screen
+            gr.update(visible=False),      # team_screen
+            gr.update(visible=False),      # faq_screen
             None,
             ready_screen_html(),
         )
@@ -769,6 +846,8 @@ def on_file_uploaded(file_obj, progress=gr.Progress()):
         gr.update(visible=False),
         gr.update(visible=False),
         gr.update(visible=False),                      # history_screen
+        gr.update(visible=False),                      # team_screen
+        gr.update(visible=False),                      # faq_screen
         normalized,                                    # video_state
         ready_screen_html(
             video_path=normalized or "",
@@ -1003,6 +1082,8 @@ def build_app() -> gr.Blocks:
         home_btn = gr.Button("home", elem_classes="dc-home-hit")
         with gr.Group(elem_classes="dc-hidden-actions"):
             history_btn = gr.Button("history", elem_classes="dc-history-hit")
+            team_btn = gr.Button("team", elem_classes="dc-team-hit")
+            faq_btn = gr.Button("faq", elem_classes="dc-faq-hit")
             # Carries the session_id JS just clicked × on. Read by go_history_delete.
             # Must be visible=True so Gradio actually mounts it — the enclosing
             # .dc-hidden-actions wrapper positions it off-screen anyway. With
@@ -1085,22 +1166,40 @@ def build_app() -> gr.Blocks:
         with gr.Group(visible=False, elem_classes="dc-naked") as history_screen:
             history_html = gr.HTML(history_screen_html())
 
+        # ───── TEAM — '팀 소개' page (6th state) ─────
+        # Standalone team/project intro (hero → approach → members → Q&A).
+        # "팀 소개" nav link in IDLE → top-level dc-team-hit button above.
+        with gr.Group(visible=False, elem_classes="dc-naked") as team_screen:
+            team_html = gr.HTML(team_screen_html())
+
+        # ───── FAQ — '자주 묻는 질문' page (7th state) ─────
+        with gr.Group(visible=False, elem_classes="dc-naked") as faq_screen:
+            faq_html = gr.HTML(faq_screen_html())
+
         # ───── Wiring ───────────────────────────────────────
         # Both go_idle (reset) and on_file_uploaded (populate) share these
         # outputs: screen visibility + state + the single Ready HTML.
         screen_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
-            history_screen,
+            history_screen, team_screen, faq_screen,
             file_in, video_state, ready_html,
         ]
         upload_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
-            history_screen,
+            history_screen, team_screen, faq_screen,
             video_state, ready_html,
         ]
         history_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
-            history_screen, history_html,
+            history_screen, team_screen, faq_screen, history_html,
+        ]
+        team_outputs = [
+            idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen, team_screen, faq_screen, team_html,
+        ]
+        faq_outputs = [
+            idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen, team_screen, faq_screen, faq_html,
         ]
 
         # All transitions opt out of Gradio's built-in "processing | N.Ns"
@@ -1142,6 +1241,14 @@ def build_app() -> gr.Blocks:
         history_btn.click(fn=go_history, outputs=history_outputs,
                           show_progress="hidden")
 
+        # Any → TEAM (triggered by visible "팀 소개" link → dc-team-hit)
+        team_btn.click(fn=go_team, outputs=team_outputs,
+                       show_progress="hidden")
+
+        # Any → FAQ (triggered by visible "자주 묻는 질문" link → dc-faq-hit)
+        faq_btn.click(fn=go_faq, outputs=faq_outputs,
+                      show_progress="hidden")
+
         # × on a history card → delete that record + re-render the page.
         # DC_BOOT_JS sets the hidden Textbox value to the session_id, then
         # clicks this hidden button; we read the textbox and act.
@@ -1158,7 +1265,7 @@ def build_app() -> gr.Blocks:
             inputs=[history_drill_target],
             outputs=[
                 idle_screen, uploaded_screen, analyzing_screen, results_screen,
-                history_screen,
+                history_screen, team_screen, faq_screen,
                 history_html, results_html, history_drill_target,
             ],
             show_progress="hidden",
