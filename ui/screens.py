@@ -44,6 +44,280 @@ _BRAND_SVG = (
 )
 
 
+# (role, 이름, 로마자, 한 줄 소개, 역량 칩[첫 칩이 lead]) — team_screen_html()이 사용.
+_TEAM_MEMBERS = [
+    ("Detection", "이지원", "Jiwon Lee",
+     "YOLO26n / RT-DETR 객체 검출 모델 학습·비교, 데이터 증강 실험",
+     ["YOLO26n", "RT-DETR", "BDD100K"]),
+    ("UI / UX", "박준형", "JunHyeong Park",
+     "4-state 시네마틱 앱, 디자인 시스템, 실시간 분석·리포트 화면 설계",
+     ["Gradio", "Design System", "Report UX"]),
+    ("VLM", "김두훈", "Duhum Kim",
+     "Qwen2.5-VL 기반 3단계 추론 코칭(상황→위험→행동) 설계·연동",
+     ["Qwen2.5-VL", "DriveVLM", "CoT"]),
+]
+
+# role → 멤버 카드 아이콘 (m-role-ic). approach 플로우의 같은 단계 아이콘과 짝.
+_MEMBER_ICONS = {
+    "Detection": '<svg viewBox="0 0 24 24"><path d="M3 3 L3 8 M3 3 L8 3 M21 3 L21 8 M21 3 L16 3 M3 21 L3 16 M3 21 L8 21 M21 21 L21 16 M21 21 L16 21"/><rect x="9" y="10" width="6" height="5" stroke-dasharray="2 2"/></svg>',
+    "UI / UX": '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1.5"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="15" y2="21"/></svg>',
+    "VLM": '<svg viewBox="0 0 24 24"><path d="M4 5 h16 v11 h-9 l-5 4 v-4 h-2 z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/></svg>',
+}
+
+
+def team_screen_html() -> str:
+    """'팀 소개' standalone page — cinematic hero → 4단계 approach → 멤버 카드.
+
+    Scoped under `.team2` so its styles never touch the FAQ page, which shares
+    the base `.team-hero` / `.team-foot` classes. Reached via the '팀 소개' nav
+    link (dc-team-link → dc-team-hit). The brand and #team-back-btn both return
+    to IDLE via dc-home-hit."""
+    cards = []
+    for i, (role, name, name_en, contrib, tags) in enumerate(_TEAM_MEMBERS, 1):
+        chips = "".join(
+            f'<span class="chip{" lead" if j == 0 else ""}">{t}</span>'
+            for j, t in enumerate(tags)
+        )
+        cards.append(f'''
+      <article class="member">
+        <div class="m-top">
+          <div class="m-role-ic">{_MEMBER_ICONS.get(role, "")}</div>
+          <span class="m-idx">{i:02d} / 03</span>
+        </div>
+        <div class="m-body">
+          <div class="m-role">{role}</div>
+          <h3 class="m-name">{name}<span class="en">{name_en}</span></h3>
+          <p class="m-desc">{contrib}</p>
+          <div class="m-stack">{chips}</div>
+        </div>
+      </article>''')
+    members = "".join(cards)
+    return f"""
+<div class="dc-v3-root team-root team2">
+  <div class="team-bar">
+    {_brand_html()}
+    <button class="history-back" type="button" id="team-back-btn" aria-label="홈으로 돌아가기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12 L5 12 M11 6 L5 12 L11 18"/>
+      </svg>
+      홈
+    </button>
+  </div>
+
+  <section class="team-hero">
+    <div class="team-hero-inner">
+      <span class="team-kicker">우리가 만드는 것 / THE TEAM</span>
+      <h1>운전을 가르치는<br/><span class="accent">백미러.</span></h1>
+      <p class="lede">
+        BackMirror는 블랙박스 영상 한 편에서 <b>위험했던&nbsp;순간</b>을 찾아냅니다.
+        그리고 <b>왜&nbsp;위험했는지</b>, <b>다음에&nbsp;뭘&nbsp;바꿀지</b>까지 짚어주는 운전 코치예요.
+        점수만 매기는 도구가 아니라, 운전을 돌아보고 싶은 누구에게나 곁에서 함께 봐주는 코치입니다.
+      </p>
+      <div class="team-hero-meta">
+        <div class="hm"><span class="n">4단계</span><span class="l">검출 · 이벤트 · 코칭 · 리포트</span></div>
+        <div class="hm"><span class="n">3명</span><span class="l">Detection · UI/UX · VLM</span></div>
+        <div class="hm"><span class="n">1색</span><span class="l">Signal Green</span></div>
+      </div>
+    </div>
+    <div class="team-scroll-cue"><span>Scroll</span><span class="line"></span></div>
+  </section>
+
+  <section class="team-approach">
+    <div class="approach-head">
+      <span class="label">접근 방식 / HOW IT WORKS</span>
+      <h2>한 편의 영상이 <em>코칭&nbsp;한&nbsp;줄</em>이 되기까지.</h2>
+      <p>네 단계를 거칩니다. 각 단계는 다음 단계가 더 정확해지도록 맥락을 넘겨줘요. 마지막에 남는 건 숫자가 아니라, 다음 주행에서 바꿔볼 수 있는 한 문장입니다.</p>
+    </div>
+
+    <div class="approach-flow">
+      <div class="af-step">
+        <span class="af-num">01 · Detect</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><path d="M3 3 L3 8 M3 3 L8 3 M21 3 L21 8 M21 3 L16 3 M3 21 L3 16 M3 21 L8 21 M21 21 L21 16 M21 21 L16 21"/><rect x="9" y="10" width="6" height="5" stroke-dasharray="2 2"/></svg></div>
+        <h3>객체 검출</h3>
+        <p>차량·보행자·이륜차·차선·신호를 프레임마다 찾아냅니다.</p>
+        <div class="af-tag">YOLO26n · RT-DETR</div>
+      </div>
+      <div class="af-step">
+        <span class="af-num">02 · Event</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><line x1="3" y1="20" x2="21" y2="20"/><rect x="5" y="12" width="3" height="8"/><rect x="10" y="6" width="3" height="14"/><rect x="15" y="14" width="3" height="6"/></svg></div>
+        <h3>이벤트 추출</h3>
+        <p>검출 결과를 규칙으로 읽어 급제동·차선 이탈 같은 위험 구간을 가려냅니다.</p>
+        <div class="af-tag">Rule-based</div>
+      </div>
+      <div class="af-step">
+        <span class="af-num">03 · Coach</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><path d="M4 5 h16 v11 h-9 l-5 4 v-4 h-2 z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/></svg></div>
+        <h3>3단계 코칭</h3>
+        <p>장면 묘사 → 원인 분석 → 행동 제안. VLM이 그 순간을 사람처럼 설명합니다.</p>
+        <div class="af-tag">Qwen2.5-VL</div>
+      </div>
+      <div class="af-step">
+        <span class="af-num">04 · Report</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg></div>
+        <h3>점수 리포트</h3>
+        <p>카테고리별 점수와 핵심 순간, 다음 주행을 위한 코칭을 한 장으로 정리합니다.</p>
+        <div class="af-tag">Score · Summary</div>
+      </div>
+    </div>
+
+    <p class="approach-diff">TMAP UBI는 <b>운전&nbsp;점수</b>를 줍니다.<br/>
+       BackMirror는 <span class="accent">왜&nbsp;위험했고 다음에&nbsp;뭘&nbsp;바꿀지</span>를 줍니다.</p>
+  </section>
+
+  <section class="team-members">
+    <div class="members-head">
+      <div>
+        <span class="label">팀 / WHO WE ARE</span>
+        <h2>세 사람이 한 대를 만듭니다.</h2>
+      </div>
+      <span class="hint">BackMirror · 2026</span>
+    </div>
+    <div class="members-grid">{members}</div>
+  </section>
+
+  <section class="team-closing">
+    <p class="tc-quote">좋은 코치는 점수를 매기지 않습니다.<br/><span class="accent">다음을 알려줍니다.</span></p>
+    <p class="tc-sub">BackMirror가 만들고 싶은 건 평가가 아니라, 다음 주행이 조금 더 안전해지는 한 문장입니다.</p>
+  </section>
+
+  <footer class="team-foot">© 2026 BACKMIRROR · 운전을 다시 보는 모두를 위한 코치</footer>
+</div>
+"""
+
+
+def faq_screen_html() -> str:
+    """'자주 묻는 질문' standalone page — 시네마틱 아코디언 (.faq2 네임스페이스).
+
+    모든 스타일이 `.faq2` 하위로 스코프돼 팀 페이지의 .team-*/.team2 와 충돌하지
+    않음. dc-faq-link → dc-faq-hit 로 도달하고, brand 와 #faq-back-btn 은
+    dc-home-hit 으로 IDLE 복귀. 답변 레이아웃이 문항마다 달라(Q2의 3단계 리스트
+    등) 콘텐츠는 의도적으로 하드코딩."""
+    chev = ('<span class="q-chevron"><svg viewBox="0 0 24 24">'
+            '<path d="M6 9 L12 15 L18 9" stroke-linecap="round" stroke-linejoin="round"/>'
+            '</svg></span>')
+    return f"""
+<div class="dc-v3-root faq2">
+  <div class="faq2-bar">
+    {_brand_html()}
+    <button class="history-back" type="button" id="faq-back-btn" aria-label="홈으로 돌아가기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12 L5 12 M11 6 L5 12 L11 18"/>
+      </svg>
+      홈
+    </button>
+  </div>
+
+  <section class="faq2-hero">
+    <div class="faq2-hero-inner">
+      <span class="faq2-kicker">Q &amp; A / FREQUENTLY ASKED</span>
+      <h1>자주 묻는<br/><span class="accent">질문.</span></h1>
+      <p class="lede">
+        BackMirror가 영상을 어떻게 보고, 무엇을 지키며, 점수를 어떻게 매기는지 —
+        <b>가장&nbsp;많이&nbsp;받은&nbsp;질문</b>을 모았습니다.
+      </p>
+    </div>
+  </section>
+
+  <section class="faq2-list">
+    <div class="faq2-list-head">
+      <span class="label">자주 묻는 질문 / FAQ</span>
+      <span class="count">05 Questions</span>
+    </div>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">01</span>
+        <span class="q-text">내 블랙박스 영상은 어디에 저장되나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          분석은 사용자 PC에서 <b>로컬로 처리</b>됩니다. 영상이 외부 서버로 전송되지 않으며,
+          분석 기록은 본인 기기(<b>~/.drivingassis</b>)에만 저장돼요.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">02</span>
+        <span class="q-text">BackMirror는 영상을 어떻게 분석하나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <div class="a-text">
+          세 단계를 거칩니다.
+          <ul class="a-steps">
+            <li><span class="st-n">①</span><span><b>YOLO 검출</b> — 차량·보행자·신호를 프레임 단위로 찾아냅니다.</span></li>
+            <li><span class="st-n">②</span><span><b>이벤트 추출</b> — 룰 기반으로 급제동·차선&nbsp;이탈·차간거리&nbsp;부족 같은 위험 이벤트를 가려냅니다.</span></li>
+            <li><span class="st-n">③</span><span><b>VLM 코칭</b> — 그 순간을 <span class="sig">상황 → 위험 → 행동</span> 3단계로 해석해 코칭 문장을 만듭니다.</span></li>
+          </ul>
+        </div>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">03</span>
+        <span class="q-text">TMAP 운전점수랑 뭐가 다른가요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          TMAP UBI는 <b>'몇 점'</b>이라는 결과를 줍니다. BackMirror는
+          <span class="sig">왜&nbsp;위험했고</span> 다음 주행에서 <span class="sig">무엇을&nbsp;바꿔야&nbsp;하는지</span>라는
+          맥락 코칭을 줍니다. 점수가 아니라 코치예요.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">04</span>
+        <span class="q-text">점수는 어떻게 매겨지나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          신호·차선·보행자·속도·안전거리 <b>5개 카테고리</b>가 각 100점에서 시작하고,
+          위험 이벤트마다 감점됩니다. 카테고리별 <b>최대 감점 폭은 제한</b>돼,
+          한 종류의 실수가 점수를 완전히 무너뜨리지 않도록 했어요.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">05</span>
+        <span class="q-text">객체를 추적(tracking)하나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          현재는 <b>프레임 단위 검출</b> 기반입니다. 같은 객체에 ID를 부여하는 추적(ByteTrack 등)은
+          로드맵에 있으며, 지금은 <span class="sig">추적된 척하는 가짜 ID를 보여주지 않습니다.</span>
+        </p>
+      </div>
+    </details>
+  </section>
+
+  <section class="faq2-closing">
+    <p class="tc-quote">궁금한 게 더 있나요?<br/><span class="accent">영상 한 편이면 충분해요.</span></p>
+    <p class="tc-sub">대부분의 질문은 직접 분석해보면 풀립니다. 블랙박스 영상을 올리면 BackMirror가 그 자리에서 답을 보여드려요.</p>
+  </section>
+
+  <footer class="faq2-foot">© 2026 BACKMIRROR · 운전을 다시 보는 모두를 위한 코치</footer>
+</div>
+"""
+
+
 def _brand_html() -> str:
     """Shared brand mark — used in nav + footer."""
     return (
@@ -88,6 +362,8 @@ def _nav_html() -> str:
     <header class="nav" id="dc-nav">
       {_brand_html()}
       <div class="nav-actions">
+        <a class="nav-link" id="dc-team-link" href="#">팀 소개</a>
+        <a class="nav-link" id="dc-faq-link" href="#">자주 묻는 질문</a>
         <a class="nav-link" id="dc-history-link" href="#">기록</a>
         <a class="btn btn-primary" href="#dc-upload">영상 업로드 {arrow}</a>
       </div>
@@ -101,6 +377,7 @@ def _hero_section() -> str:
     # Local hero.mp4 (in assets/) — served by Gradio via allowed_paths.
     # We use the gradio_api/file route which Gradio exposes for static files.
     hero_video = "/gradio_api/file=assets/hero.mp4"
+    hero_ai_video = "/gradio_api/file=assets/hero_ai.mp4"
     return f"""
     <section class="hero" id="dc-top">
       <div class="hero-top">
@@ -133,7 +410,7 @@ def _hero_section() -> str:
           <span class="frame-tc">00:00:13:21 · 24 fps</span>
           <video autoplay muted loop playsinline preload="auto"
                  aria-label="야간 주행 POV — AI 분석"
-                 src="{hero_video}"></video>
+                 src="{hero_ai_video}"></video>
 
           <svg class="ai-overlay" viewBox="0 0 1600 900" preserveAspectRatio="none">
             <defs>
@@ -353,7 +630,7 @@ def _report_section() -> str:
           <article class="km">
             <div class="km-img">
               <img alt="02:14 차선 변경"
-                src="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=900&q=80"/>
+                src="/gradio_api/file=assets/sample_lane.jpg"/>
               <svg class="km-overlay" viewBox="0 0 400 225" preserveAspectRatio="none">
                 <rect x="168" y="96" width="108" height="70"/>
                 <text x="168" y="90">HANDS · 0.96</text>
@@ -372,7 +649,7 @@ def _report_section() -> str:
           <article class="km">
             <div class="km-img">
               <img alt="06:47 차간거리"
-                src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=900&q=80"/>
+                src="/gradio_api/file=assets/sample_gap.jpg"/>
               <svg class="km-overlay" viewBox="0 0 400 225" preserveAspectRatio="none">
                 <rect class="amber" x="130" y="94" width="140" height="82"/>
                 <text class="amber" x="130" y="88">VEHICLE · 1.4s</text>
@@ -391,7 +668,7 @@ def _report_section() -> str:
           <article class="km">
             <div class="km-img">
               <img alt="10:32 급제동"
-                src="https://images.unsplash.com/photo-1485463611174-f302f6a5c1c9?auto=format&fit=crop&w=900&q=80"/>
+                src="/gradio_api/file=assets/sample_brake.jpg"/>
               <svg class="km-overlay" viewBox="0 0 400 225" preserveAspectRatio="none">
                 <rect class="risk" x="150" y="86" width="120" height="92"/>
                 <text class="risk" x="150" y="80">VEHICLE · BRAKE</text>
@@ -1030,7 +1307,8 @@ def _hero_quote_text(hero_event, hero_coaching) -> str:
     """One-sentence coaching line for the hero. Prefers VLM action_plan,
     falls back to a soft message when there's nothing to coach about."""
     if hero_event and hero_coaching and (hero_coaching.action_plan or "").strip():
-        return _first_coach_sentence(hero_coaching.action_plan)
+        # hero 는 큰 폰트라 캡을 더 짧게(55) — 장황한 첫 문장도 4줄 이내로.
+        return _first_coach_sentence(hero_coaching.action_plan, max_len=55)
     if hero_event:
         # event found but no coaching text — minimal fallback per severity
         if hero_event.severity == "danger":
@@ -1601,6 +1879,7 @@ def results_screen_html(
     event_stills: dict | None = None,
     session_id: str = "—",
     prior=None,
+    from_history: bool = False,
 ) -> str:
     """RESULTS v5 — coaching sentence is the hero, score is supporting,
     annotated video is the evidence. One self-contained HTML blob.
@@ -1661,6 +1940,15 @@ def results_screen_html(
     breakdown_section = _breakdown_section_html(score, prior)
 
     safe_name = filename or "주행 영상"
+    # HISTORY 드릴다운으로 열렸을 때만 '← 기록' 버튼을 노출 (dc-history-hit 로 브릿지).
+    # 분석 직후의 RESULTS 에는 기록 목록이 맥락에 없으므로 표시하지 않는다.
+    back_to_history = (
+        '<button class="history-back" type="button" id="results-tohistory-btn" '
+        'aria-label="기록으로 돌아가기">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M19 12 L5 12 M11 6 L5 12 L11 18"/></svg>기록</button>'
+    ) if from_history else ""
 
     return f"""
 <div class="dc-v3-root results-root">
@@ -1671,6 +1959,7 @@ def results_screen_html(
       <span>BACK<span class="accent">MIRROR</span></span>
     </a>
     <div class="results-nav-right">
+      {back_to_history}
       <span class="ready-pill"><span class="dot"></span>리포트 준비됨</span>
       <span>SESSION · {session_id}</span>
     </div>

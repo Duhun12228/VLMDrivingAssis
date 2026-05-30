@@ -35,10 +35,12 @@ from core.vlm import generate_coaching
 from ui.screens import (
     analyzing_screen_html,
     error_results_html,
+    faq_screen_html,
     history_screen_html,
     idle_hero_html,
     ready_screen_html,
     results_screen_html,
+    team_screen_html,
 )
 from ui.theme import CUSTOM_CSS, build_theme
 
@@ -140,6 +142,14 @@ DC_BOOT_JS = """
         document.querySelector('.dc-results-again-hit')?.click();
       });
     }
+    // RESULTS '← 기록' (HISTORY 드릴다운에서만 표시) → 기록 목록으로 복귀
+    const resultsToHistory = document.getElementById('results-tohistory-btn');
+    if (resultsToHistory && !resultsToHistory.__bound) {
+      resultsToHistory.__bound = true;
+      resultsToHistory.addEventListener('click', () => {
+        document.querySelector('.dc-history-hit')?.click();
+      });
+    }
 
     // --- 3f. RESULTS timeline + moment cards → seek the annotated video ---
     // Any element with `data-tc` (timeline marker, label button, moment card)
@@ -152,16 +162,33 @@ DC_BOOT_JS = """
       resultsTrack.__bound = true;
       const seekFromEl = (el) => {
         const tc = parseFloat(el.dataset.tc);
-        if (Number.isFinite(tc)) {
-          try {
-            resultsVideo.currentTime = tc;
-            resultsVideo.play().catch(() => {});
-          } catch (e) { /* ignore */ }
-          // visual feedback on labels
-          document.querySelectorAll('.timeline-labels button').forEach(b =>
-            b.classList.toggle('active', b === el)
-          );
-        }
+        if (!Number.isFinite(tc)) return;
+        // 마커는 '그 순간'을 가리키므로 전체가 아니라 이벤트 구간만 재생한다:
+        // 1.5초 앞(컨텍스트) ~ 3초 뒤. 구간 끝에서 자동 정지하고, 사용자가
+        // 재생바를 직접 다시 누르면 일반 재생으로 돌아간다(핸들러가 1회성).
+        const start = Math.max(0, tc - 1.5);
+        const dur = resultsVideo.duration;
+        const end = Number.isFinite(dur) ? Math.min(dur, tc + 3) : tc + 3;
+        try {
+          if (resultsVideo.__clipStop) {
+            resultsVideo.removeEventListener('timeupdate', resultsVideo.__clipStop);
+          }
+          const stop = () => {
+            if (resultsVideo.currentTime >= end) {
+              resultsVideo.pause();
+              resultsVideo.removeEventListener('timeupdate', stop);
+              resultsVideo.__clipStop = null;
+            }
+          };
+          resultsVideo.__clipStop = stop;
+          resultsVideo.addEventListener('timeupdate', stop);
+          resultsVideo.currentTime = start;
+          resultsVideo.play().catch(() => {});
+        } catch (e) { /* ignore */ }
+        // visual feedback on labels
+        document.querySelectorAll('.timeline-labels button').forEach(b =>
+          b.classList.toggle('active', b === el)
+        );
       };
       document.querySelectorAll(
         '.results-root [data-tc]'
@@ -191,11 +218,11 @@ DC_BOOT_JS = """
       resultsVideo.addEventListener('loadedmetadata', updatePlayhead);
     }
 
-    // --- 3d. ANALYZING cancel button → reset to IDLE ---
-    // The visible '분석 중단' button in the new analyzing nav. We don't
-    // actually interrupt the run_analysis generator (Gradio queues it to
-    // completion); the visible state just snaps back to IDLE and the
-    // generator's eventual output goes nowhere visible.
+    // --- 3d. ANALYZING cancel button → reset to IDLE + cancel the run ---
+    // The visible '분석 중단' button bridges to the hidden home button, which
+    // both snaps the view back to IDLE and cancels the running run_analysis
+    // generator (see home_btn.click cancels=[run_evt] server-side). A run
+    // cancelled during analysis stops before save_analysis — no history row.
     const analyzCancel = document.getElementById('analyz-cancel-btn');
     if (analyzCancel && !analyzCancel.__bound) {
       analyzCancel.__bound = true;
@@ -324,6 +351,40 @@ DC_BOOT_JS = """
       historyUpload.__bound = true;
       historyUpload.addEventListener('click', () => {
         // Return to IDLE — the dropzone lives there
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+    // '팀 소개' nav link → hidden dc-team-hit → go_team() server-side.
+    const teamLink = document.getElementById('dc-team-link');
+    if (teamLink && !teamLink.__bound) {
+      teamLink.__bound = true;
+      teamLink.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector('.dc-team-hit')?.click();
+      });
+    }
+    // TEAM '홈으로' button → reset to IDLE.
+    const teamBack = document.getElementById('team-back-btn');
+    if (teamBack && !teamBack.__bound) {
+      teamBack.__bound = true;
+      teamBack.addEventListener('click', () => {
+        document.querySelector('.dc-home-hit')?.click();
+      });
+    }
+    // '자주 묻는 질문' nav link → hidden dc-faq-hit → go_faq() server-side.
+    const faqLink = document.getElementById('dc-faq-link');
+    if (faqLink && !faqLink.__bound) {
+      faqLink.__bound = true;
+      faqLink.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector('.dc-faq-hit')?.click();
+      });
+    }
+    // FAQ '홈으로' button → reset to IDLE.
+    const faqBack = document.getElementById('faq-back-btn');
+    if (faqBack && !faqBack.__bound) {
+      faqBack.__bound = true;
+      faqBack.addEventListener('click', () => {
         document.querySelector('.dc-home-hit')?.click();
       });
     }
@@ -657,6 +718,8 @@ def go_idle():
         gr.update(visible=False),      # analyzing_screen
         gr.update(visible=False),      # results_screen
         gr.update(visible=False),      # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=False),      # faq_screen
         gr.update(value=None),         # file_in (clear)
         None,                          # video_state
         ready_screen_html(),           # ready_html (reset)
@@ -673,7 +736,40 @@ def go_history():
         gr.update(visible=False),      # analyzing_screen
         gr.update(visible=False),      # results_screen
         gr.update(visible=True),       # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=False),      # faq_screen
         history_screen_html(records=records),  # history_html
+    )
+
+
+def go_team():
+    """Any → TEAM ('팀 소개'). Triggered by the '팀 소개' nav link in IDLE,
+    bridged by DC_BOOT_JS to the hidden dc-team-hit button. The brand and
+    #team-back-btn return to IDLE via dc-home-hit."""
+    return (
+        gr.update(visible=False),      # idle_screen
+        gr.update(visible=False),      # uploaded_screen
+        gr.update(visible=False),      # analyzing_screen
+        gr.update(visible=False),      # results_screen
+        gr.update(visible=False),      # history_screen
+        gr.update(visible=True),       # team_screen
+        gr.update(visible=False),      # faq_screen
+        team_screen_html(),            # team_html
+    )
+
+
+def go_faq():
+    """Any → FAQ ('자주 묻는 질문'). Triggered by the '자주 묻는 질문' nav link
+    → hidden dc-faq-hit button. Brand and #faq-back-btn return to IDLE."""
+    return (
+        gr.update(visible=False),      # idle_screen
+        gr.update(visible=False),      # uploaded_screen
+        gr.update(visible=False),      # analyzing_screen
+        gr.update(visible=False),      # results_screen
+        gr.update(visible=False),      # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=True),       # faq_screen
+        faq_screen_html(),             # faq_html
     )
 
 
@@ -711,6 +807,8 @@ def go_history_drilldown(target_session_id: str):
             gr.update(),                                # analyzing
             gr.update(),                                # results
             gr.update(),                                # history (stay)
+            gr.update(),                                # team
+            gr.update(),                                # faq
             history_screen_html(records=records),       # history_html refresh
             gr.update(),                                # results_html
             "",                                         # clear drill textbox
@@ -729,6 +827,7 @@ def go_history_drilldown(target_session_id: str):
         event_stills={},              # event stills were temp jpgs, also gone
         session_id=target.session_id,
         prior=prior,
+        from_history=True,            # show the '← 기록' back button in the nav
     )
     return (
         gr.update(visible=False),     # idle
@@ -736,6 +835,8 @@ def go_history_drilldown(target_session_id: str):
         gr.update(visible=False),     # analyzing
         gr.update(visible=True),      # results ← navigate here
         gr.update(visible=False),     # history
+        gr.update(visible=False),     # team
+        gr.update(visible=False),     # faq
         gr.update(),                  # history_html (no change needed)
         html,                         # results_html ← past analysis
         "",                           # clear drill textbox
@@ -743,24 +844,40 @@ def go_history_drilldown(target_session_id: str):
 
 
 def on_file_uploaded(file_obj, progress=gr.Progress()):
-    """IDLE → UPLOADED. Normalize to browser-safe mp4 and build the Ready screen."""
+    """IDLE → UPLOADED. Normalize to browser-safe mp4 and build the Ready screen.
+
+    Guards the demo against bad input: a file that can't be transcoded or
+    opened (corrupt / unsupported codec) shows a gentle warning and stays on
+    IDLE, instead of crashing or marching into a doomed analysis."""
+    idle = (
+        gr.update(visible=True),
+        gr.update(visible=False),
+        gr.update(visible=False),
+        gr.update(visible=False),
+        gr.update(visible=False),      # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=False),      # faq_screen
+        None,                          # video_state (clear)
+        ready_screen_html(),
+    )
     if file_obj is None:
-        return (
-            gr.update(visible=True),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            None,
-            ready_screen_html(),
-        )
+        return idle
 
     src = file_obj if isinstance(file_obj, str) else getattr(file_obj, "name", None)
-    progress(0.3, desc="브라우저 호환 형식으로 변환 중…")
-    normalized = normalize_for_browser(src) if src else None
-    progress(1.0, desc="준비 완료")
+    try:
+        progress(0.3, desc="브라우저 호환 형식으로 변환 중…")
+        normalized = normalize_for_browser(src) if src else None
+    except Exception:
+        normalized = None
 
     meta = _video_meta(normalized) if normalized else _video_meta("")
+    # 열 수 없는 영상(손상·미지원 코덱)은 분석까지 가지 않고 여기서 우아하게 안내.
+    # 오탐 방지: 해상도·길이가 '모두' 0일 때만 (부분 메타 누락은 통과시킨다).
+    if not normalized or (meta["width"] == 0 and meta["height"] == 0 and meta["duration"] <= 0):
+        gr.Warning("이 영상은 열 수 없어요. 다른 블랙박스 영상을 올려주세요.")
+        return idle
+
+    progress(1.0, desc="준비 완료")
     session_id = _new_session_id()
 
     return (
@@ -769,6 +886,8 @@ def on_file_uploaded(file_obj, progress=gr.Progress()):
         gr.update(visible=False),
         gr.update(visible=False),
         gr.update(visible=False),                      # history_screen
+        gr.update(visible=False),                      # team_screen
+        gr.update(visible=False),                      # faq_screen
         normalized,                                    # video_state
         ready_screen_html(
             video_path=normalized or "",
@@ -937,7 +1056,9 @@ def _run_analysis_impl(video_path: str, analyz_meta: dict | None = None):
     score = calculate_score(events)
 
     # ── Phase 4b: annotated video + evidence stills ──
-    yield (screen(pct=88, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+    # 95%: 인코딩이 가장 무거운 작업이라 그 직전에 "마무리 임박"으로 올려둔다.
+    # (render_annotated_video 가 블로킹이라 인코딩 동안은 이 화면이 유지된다.)
+    yield (screen(pct=95, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
                   phase="render", poster_path=current_poster), gr.update())
     det_by_idx = {f.frame_idx: f for f in frames}
     ev_by_idx = {ev.frame_idx: ev for ev in events}
@@ -966,6 +1087,11 @@ def _run_analysis_impl(video_path: str, analyz_meta: dict | None = None):
     except OSError:
         pass  # history persistence is best-effort, never block the report
 
+    # 인코딩까지 끝났으니 100% 를 잠깐 보여줘 95%→결과 점프 대신 완료감을 준다.
+    yield (screen(pct=100, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+                  phase="render", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)
+
     # ── Done: fill the RESULTS screen (ANALYZING left as-is) ──
     yield (
         gr.update(),
@@ -990,7 +1116,12 @@ def build_app() -> gr.Blocks:
     # We do NOT rely solely on launch(js=...) because Gradio 6 sometimes
     # doesn't auto-invoke that function. A <script> tag is guaranteed to
     # execute as soon as the document loads.
-    head_html = f"<script>(function(){{ ({DC_BOOT_JS})(); }})();</script>"
+    # favicon: 브라우저는 SVG 파비콘을 지원하지만 Gradio 의 favicon_path 는 SVG 를
+    # 무시하므로, 사이드미러 로고를 <link> 로 직접 주입한다(assets 는 allowed_paths).
+    head_html = (
+        '<link rel="icon" type="image/svg+xml" href="/gradio_api/file=assets/favicon.svg">'
+        f"<script>(function(){{ ({DC_BOOT_JS})(); }})();</script>"
+    )
     with gr.Blocks(title="BackMirror", head=head_html) as app:
         # Invisible click targets bridged by DC_BOOT_JS. These MUST live at
         # the top level (not inside conditionally-visible Groups) because
@@ -1003,6 +1134,8 @@ def build_app() -> gr.Blocks:
         home_btn = gr.Button("home", elem_classes="dc-home-hit")
         with gr.Group(elem_classes="dc-hidden-actions"):
             history_btn = gr.Button("history", elem_classes="dc-history-hit")
+            team_btn = gr.Button("team", elem_classes="dc-team-hit")
+            faq_btn = gr.Button("faq", elem_classes="dc-faq-hit")
             # Carries the session_id JS just clicked × on. Read by go_history_delete.
             # Must be visible=True so Gradio actually mounts it — the enclosing
             # .dc-hidden-actions wrapper positions it off-screen anyway. With
@@ -1085,22 +1218,40 @@ def build_app() -> gr.Blocks:
         with gr.Group(visible=False, elem_classes="dc-naked") as history_screen:
             history_html = gr.HTML(history_screen_html())
 
+        # ───── TEAM — '팀 소개' page (6th state) ─────
+        # Standalone team/project intro (hero → approach → members → Q&A).
+        # "팀 소개" nav link in IDLE → top-level dc-team-hit button above.
+        with gr.Group(visible=False, elem_classes="dc-naked") as team_screen:
+            team_html = gr.HTML(team_screen_html())
+
+        # ───── FAQ — '자주 묻는 질문' page (7th state) ─────
+        with gr.Group(visible=False, elem_classes="dc-naked") as faq_screen:
+            faq_html = gr.HTML(faq_screen_html())
+
         # ───── Wiring ───────────────────────────────────────
         # Both go_idle (reset) and on_file_uploaded (populate) share these
         # outputs: screen visibility + state + the single Ready HTML.
         screen_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
-            history_screen,
+            history_screen, team_screen, faq_screen,
             file_in, video_state, ready_html,
         ]
         upload_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
-            history_screen,
+            history_screen, team_screen, faq_screen,
             video_state, ready_html,
         ]
         history_outputs = [
             idle_screen, uploaded_screen, analyzing_screen, results_screen,
-            history_screen, history_html,
+            history_screen, team_screen, faq_screen, history_html,
+        ]
+        team_outputs = [
+            idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen, team_screen, faq_screen, team_html,
+        ]
+        faq_outputs = [
+            idle_screen, uploaded_screen, analyzing_screen, results_screen,
+            history_screen, team_screen, faq_screen, faq_html,
         ]
 
         # All transitions opt out of Gradio's built-in "processing | N.Ns"
@@ -1117,17 +1268,21 @@ def build_app() -> gr.Blocks:
                        show_progress="hidden")
 
         # UPLOADED → ANALYZING → RESULTS
-        analyze_btn.click(
+        # run_evt 를 잡아두어 '분석 중단'(home_btn 으로 브릿지)이 이 제너레이터를
+        # 실제로 취소할 수 있게 한다. (아래 home_btn.click 의 cancels 참고)
+        analyze_evt = analyze_btn.click(
             fn=go_analyzing,
             inputs=[video_state],
             outputs=[uploaded_screen, analyzing_screen, analyzing_html, analyz_state],
             show_progress="hidden",
-        ).then(
+        )
+        run_evt = analyze_evt.then(
             fn=run_analysis,
             inputs=[video_state, analyz_state],
             outputs=[analyzing_html, results_html],
             show_progress="hidden",
-        ).then(
+        )
+        run_evt.then(
             fn=go_results,
             outputs=[analyzing_screen, results_screen],
             show_progress="hidden",
@@ -1141,6 +1296,14 @@ def build_app() -> gr.Blocks:
         # bridged by DC_BOOT_JS to this hidden button)
         history_btn.click(fn=go_history, outputs=history_outputs,
                           show_progress="hidden")
+
+        # Any → TEAM (triggered by visible "팀 소개" link → dc-team-hit)
+        team_btn.click(fn=go_team, outputs=team_outputs,
+                       show_progress="hidden")
+
+        # Any → FAQ (triggered by visible "자주 묻는 질문" link → dc-faq-hit)
+        faq_btn.click(fn=go_faq, outputs=faq_outputs,
+                      show_progress="hidden")
 
         # × on a history card → delete that record + re-render the page.
         # DC_BOOT_JS sets the hidden Textbox value to the session_id, then
@@ -1158,15 +1321,18 @@ def build_app() -> gr.Blocks:
             inputs=[history_drill_target],
             outputs=[
                 idle_screen, uploaded_screen, analyzing_screen, results_screen,
-                history_screen,
+                history_screen, team_screen, faq_screen,
                 history_html, results_html, history_drill_target,
             ],
             show_progress="hidden",
         )
 
         # Header brand → IDLE (from any screen)
+        # 분석 중 홈/중단으로 나가면 run_analysis 제너레이터를 실제로 취소한다
+        # ('분석 중단'·brand·홈 모두 home_btn 으로 브릿지됨). 분석 도중 취소하면
+        # generator 가 save_analysis 전에 멈춰, 그 분석은 HISTORY 에 남지 않는다.
         home_btn.click(fn=go_idle, outputs=screen_outputs,
-                       show_progress="hidden")
+                       show_progress="hidden", cancels=[run_evt])
 
     return app
 
