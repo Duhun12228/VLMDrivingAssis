@@ -44,128 +44,276 @@ _BRAND_SVG = (
 )
 
 
+# (role, 이름, 로마자, 한 줄 소개, 역량 칩[첫 칩이 lead]) — team_screen_html()이 사용.
 _TEAM_MEMBERS = [
-    ("Detection", "이지원", "YOLO26n / RT-DETR 객체 검출 모델 학습·비교, 데이터 증강 실험",
+    ("Detection", "이지원", "Jiwon Lee",
+     "YOLO26n / RT-DETR 객체 검출 모델 학습·비교, 데이터 증강 실험",
      ["YOLO26n", "RT-DETR", "BDD100K"]),
-    ("UI / UX", "박준형", "4-state 시네마틱 앱, 디자인 시스템, 실시간 분석·리포트 화면 설계",
+    ("UI / UX", "박준형", "JunHyeong Park",
+     "4-state 시네마틱 앱, 디자인 시스템, 실시간 분석·리포트 화면 설계",
      ["Gradio", "Design System", "Report UX"]),
-    ("VLM", "김두훈", "Qwen2.5-VL 기반 3단계 추론 코칭(상황→위험→행동) 설계·연동",
+    ("VLM", "김두훈", "Duhum Kim",
+     "Qwen2.5-VL 기반 3단계 추론 코칭(상황→위험→행동) 설계·연동",
      ["Qwen2.5-VL", "DriveVLM", "CoT"]),
 ]
 
-_TEAM_FAQ = [
-    ("내 블랙박스 영상은 어디에 저장되나요?",
-     "분석은 사용자의 PC에서 로컬로 처리됩니다. 영상이 외부 서버로 전송되지 않으며, "
-     "분석 기록은 본인 기기(~/.drivingassis)에만 저장돼요."),
-    ("BackMirror는 영상을 어떻게 분석하나요?",
-     "① YOLO로 차량·보행자·신호를 프레임 단위로 검출하고 ② 룰 기반으로 급제동·차선 이탈·"
-     "차간거리 부족 같은 위험 이벤트를 추출한 뒤 ③ VLM이 그 순간을 상황→위험→행동 3단계로 "
-     "해석해 코칭 문장을 만듭니다."),
-    ("TMAP 운전점수랑 뭐가 다른가요?",
-     "TMAP UBI는 '몇 점'이라는 결과를 줍니다. BackMirror는 '왜 위험했고 다음 주행에서 무엇을 "
-     "바꿔야 하는지'라는 맥락 코칭을 줍니다. 점수가 아니라 코치예요."),
-    ("점수는 어떻게 매겨지나요?",
-     "신호·차선·보행자·속도·안전거리 5개 카테고리가 각 100점에서 시작하고, 위험 이벤트마다 "
-     "감점됩니다. 카테고리별 최대 감점 폭은 제한돼 한 종류의 실수가 점수를 완전히 무너뜨리지 "
-     "않도록 했어요."),
-    ("객체를 추적(tracking)하나요?",
-     "현재는 프레임 단위 검출 기반입니다. 같은 객체에 ID를 부여하는 추적(ByteTrack 등)은 "
-     "로드맵에 있으며, 지금은 추적된 척하는 가짜 ID를 보여주지 않습니다."),
-]
+# role → 멤버 카드 아이콘 (m-role-ic). approach 플로우의 같은 단계 아이콘과 짝.
+_MEMBER_ICONS = {
+    "Detection": '<svg viewBox="0 0 24 24"><path d="M3 3 L3 8 M3 3 L8 3 M21 3 L21 8 M21 3 L16 3 M3 21 L3 16 M3 21 L8 21 M21 21 L21 16 M21 21 L16 21"/><rect x="9" y="10" width="6" height="5" stroke-dasharray="2 2"/></svg>',
+    "UI / UX": '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="1.5"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="15" y2="21"/></svg>',
+    "VLM": '<svg viewBox="0 0 24 24"><path d="M4 5 h16 v11 h-9 l-5 4 v-4 h-2 z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/></svg>',
+}
 
 
 def team_screen_html() -> str:
-    """'팀 소개' standalone page (Toss team-page inspired, BackMirror dark tone).
+    """'팀 소개' standalone page — cinematic hero → 4단계 approach → 멤버 카드.
 
-    Full-viewport hero → 4-step approach → member cards → Q&A accordion.
-    Reached via the '팀 소개' nav link (dc-team-link → dc-team-hit). The brand
-    and #team-back-btn both return to IDLE via dc-home-hit."""
-    members = "".join(
-        f'''
-        <article class="member">
-          <span class="m-role">{role}</span>
-          <h3>{name}</h3>
-          <p>{contrib}</p>
-          <div class="m-tags">{"".join(f"<span>{t}</span>" for t in tags)}</div>
-        </article>'''
-        for role, name, contrib, tags in _TEAM_MEMBERS
-    )
+    Scoped under `.team2` so its styles never touch the FAQ page, which shares
+    the base `.team-hero` / `.team-foot` classes. Reached via the '팀 소개' nav
+    link (dc-team-link → dc-team-hit). The brand and #team-back-btn both return
+    to IDLE via dc-home-hit."""
+    cards = []
+    for i, (role, name, name_en, contrib, tags) in enumerate(_TEAM_MEMBERS, 1):
+        chips = "".join(
+            f'<span class="chip{" lead" if j == 0 else ""}">{t}</span>'
+            for j, t in enumerate(tags)
+        )
+        cards.append(f'''
+      <article class="member">
+        <div class="m-top">
+          <div class="m-role-ic">{_MEMBER_ICONS.get(role, "")}</div>
+          <span class="m-idx">{i:02d} / 03</span>
+        </div>
+        <div class="m-body">
+          <div class="m-role">{role}</div>
+          <h3 class="m-name">{name}<span class="en">{name_en}</span></h3>
+          <p class="m-desc">{contrib}</p>
+          <div class="m-stack">{chips}</div>
+        </div>
+      </article>''')
+    members = "".join(cards)
     return f"""
-<div class="dc-v3-root team-root">
-  <nav class="team-nav">
+<div class="dc-v3-root team-root team2">
+  <div class="team-bar">
     {_brand_html()}
-    <button type="button" id="team-back-btn" class="team-back">홈으로</button>
-  </nav>
+    <button class="history-back" type="button" id="team-back-btn" aria-label="홈으로 돌아가기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12 L5 12 M11 6 L5 12 L11 18"/>
+      </svg>
+      홈
+    </button>
+  </div>
 
   <section class="team-hero">
-    <span class="label label-signal">FVE3011 자동차인공지능 · Term Project</span>
-    <h1>블랙박스를 넘어,<br/><em class="accent">운전을 코치합니다.</em></h1>
-    <p>BackMirror는 위험한 순간을 찾아내는 데서 멈추지 않습니다.
-       왜 위험했는지, 다음 주행에서 무엇을 바꿔야 하는지까지 —
-       점수가 아니라 맥락을 건넵니다.</p>
+    <div class="team-hero-inner">
+      <span class="team-kicker">우리가 만드는 것 / THE TEAM</span>
+      <h1>운전을 가르치는<br/><span class="accent">백미러.</span></h1>
+      <p class="lede">
+        BackMirror는 블랙박스 영상 한 편에서 <b>위험했던&nbsp;순간</b>을 찾아냅니다.
+        그리고 <b>왜&nbsp;위험했는지</b>, <b>다음에&nbsp;뭘&nbsp;바꿀지</b>까지 짚어주는 초보운전자 코치예요.
+        점수만 매기는 도구가 아니라, 옆자리에서 같이 봐주는 사람에 가깝습니다.
+      </p>
+      <div class="team-hero-meta">
+        <div class="hm"><span class="n">4단계</span><span class="l">검출 · 이벤트 · 코칭 · 리포트</span></div>
+        <div class="hm"><span class="n">3명</span><span class="l">Detection · UI/UX · VLM</span></div>
+        <div class="hm"><span class="n">1색</span><span class="l">Signal Green</span></div>
+      </div>
+    </div>
+    <div class="team-scroll-cue"><span>Scroll</span><span class="line"></span></div>
   </section>
 
   <section class="team-approach">
-    <span class="label">Our Approach</span>
-    <div class="approach-flow">
-      <div class="af-step"><span class="af-num">01</span><b>검출</b>
-        <p>YOLO26n / RT-DETR로 차량·보행자·신호를 프레임 단위로 찾습니다.</p></div>
-      <div class="af-step"><span class="af-num">02</span><b>이벤트</b>
-        <p>룰 기반으로 급제동·차선 이탈·차간거리 부족을 추출합니다.</p></div>
-      <div class="af-step"><span class="af-num">03</span><b>코칭</b>
-        <p>VLM이 상황→위험→행동 3단계로 그 순간을 해석합니다.</p></div>
-      <div class="af-step"><span class="af-num">04</span><b>리포트</b>
-        <p>점수·근거 클립·한 줄 코칭을 한 페이지로 정리합니다.</p></div>
+    <div class="approach-head">
+      <span class="label">접근 방식 / HOW IT WORKS</span>
+      <h2>한 편의 영상이 <em>코칭&nbsp;한&nbsp;줄</em>이 되기까지.</h2>
+      <p>네 단계를 거칩니다. 각 단계는 다음 단계가 더 정확해지도록 맥락을 넘겨줘요. 마지막에 남는 건 숫자가 아니라, 다음 주행에서 바꿔볼 수 있는 한 문장입니다.</p>
     </div>
-    <p class="approach-diff">TMAP UBI는 <b>운전 점수</b>를 줍니다.
-       BackMirror는 <em class="accent">왜 위험했고 다음에 뭘 바꿀지</em>를 줍니다.</p>
+
+    <div class="approach-flow">
+      <div class="af-step">
+        <span class="af-num">01 · Detect</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><path d="M3 3 L3 8 M3 3 L8 3 M21 3 L21 8 M21 3 L16 3 M3 21 L3 16 M3 21 L8 21 M21 21 L21 16 M21 21 L16 21"/><rect x="9" y="10" width="6" height="5" stroke-dasharray="2 2"/></svg></div>
+        <h3>객체 검출</h3>
+        <p>차량·보행자·이륜차·차선·신호를 프레임마다 찾아냅니다.</p>
+        <div class="af-tag">YOLO26n · RT-DETR</div>
+      </div>
+      <div class="af-step">
+        <span class="af-num">02 · Event</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><line x1="3" y1="20" x2="21" y2="20"/><rect x="5" y="12" width="3" height="8"/><rect x="10" y="6" width="3" height="14"/><rect x="15" y="14" width="3" height="6"/></svg></div>
+        <h3>이벤트 추출</h3>
+        <p>검출 결과를 규칙으로 읽어 급제동·차선 이탈 같은 위험 구간을 가려냅니다.</p>
+        <div class="af-tag">Rule-based</div>
+      </div>
+      <div class="af-step">
+        <span class="af-num">03 · Coach</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><path d="M4 5 h16 v11 h-9 l-5 4 v-4 h-2 z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="12" x2="13" y2="12"/></svg></div>
+        <h3>3단계 코칭</h3>
+        <p>장면 묘사 → 원인 분석 → 행동 제안. VLM이 그 순간을 사람처럼 설명합니다.</p>
+        <div class="af-tag">Qwen2.5-VL</div>
+      </div>
+      <div class="af-step">
+        <span class="af-num">04 · Report</span>
+        <div class="af-ic"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg></div>
+        <h3>점수 리포트</h3>
+        <p>카테고리별 점수와 핵심 순간, 다음 주행을 위한 코칭을 한 장으로 정리합니다.</p>
+        <div class="af-tag">Score · Summary</div>
+      </div>
+    </div>
+
+    <p class="approach-diff">TMAP UBI는 <b>운전&nbsp;점수</b>를 줍니다.
+       BackMirror는 <span class="accent">왜&nbsp;위험했고 다음에&nbsp;뭘&nbsp;바꿀지</span>를 줍니다.</p>
   </section>
 
   <section class="team-members">
-    <span class="label">Team BackMirror</span>
-    <h2>세 사람이 만든 한 대의 코치.</h2>
-    <div class="member-grid">{members}</div>
+    <div class="members-head">
+      <div>
+        <span class="label">팀 / WHO WE ARE</span>
+        <h2>세 사람이 한 대를 만듭니다.</h2>
+      </div>
+      <span class="hint">BackMirror · 2026</span>
+    </div>
+    <div class="members-grid">{members}</div>
   </section>
 
-  <footer class="team-foot">© 2026 BACKMIRROR · Team BackMirror</footer>
+  <section class="team-closing">
+    <p class="tc-quote">좋은 코치는 점수를 매기지 않습니다.<br/><span class="accent">다음을 알려줍니다.</span></p>
+    <p class="tc-sub">BackMirror가 만들고 싶은 건 평가가 아니라, 다음 주행이 조금 더 안전해지는 한 문장입니다.</p>
+  </section>
+
+  <footer class="team-foot">© 2026 BACKMIRROR · 초보운전자를 위한 운전 코치</footer>
 </div>
 """
 
 
 def faq_screen_html() -> str:
-    """'자주 묻는 질문' standalone page — FAQ accordion (native <details>).
-    Reached via dc-faq-link → dc-faq-hit. Brand + #faq-back-btn → IDLE.
-    Reuses the .team-* layout classes (shared with the 팀 소개 page)."""
-    faq = "".join(
-        f'''
-        <details class="faq-item">
-          <summary><span>{q}</span>
-            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 9 L12 15 L18 9"/></svg>
-          </summary>
-          <p>{a}</p>
-        </details>'''
-        for q, a in _TEAM_FAQ
-    )
+    """'자주 묻는 질문' standalone page — 시네마틱 아코디언 (.faq2 네임스페이스).
+
+    모든 스타일이 `.faq2` 하위로 스코프돼 팀 페이지의 .team-*/.team2 와 충돌하지
+    않음. dc-faq-link → dc-faq-hit 로 도달하고, brand 와 #faq-back-btn 은
+    dc-home-hit 으로 IDLE 복귀. 답변 레이아웃이 문항마다 달라(Q2의 3단계 리스트
+    등) 콘텐츠는 의도적으로 하드코딩."""
+    chev = ('<span class="q-chevron"><svg viewBox="0 0 24 24">'
+            '<path d="M6 9 L12 15 L18 9" stroke-linecap="round" stroke-linejoin="round"/>'
+            '</svg></span>')
     return f"""
-<div class="dc-v3-root team-root faq-root">
-  <nav class="team-nav">
+<div class="dc-v3-root faq2">
+  <div class="faq2-bar">
     {_brand_html()}
-    <button type="button" id="faq-back-btn" class="team-back">홈으로</button>
-  </nav>
+    <button class="history-back" type="button" id="faq-back-btn" aria-label="홈으로 돌아가기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12 L5 12 M11 6 L5 12 L11 18"/>
+      </svg>
+      홈
+    </button>
+  </div>
 
-  <section class="team-hero faq-hero">
-    <span class="label label-signal">Q &amp; A</span>
-    <h1>자주 묻는<br/><em class="accent">질문.</em></h1>
-    <p>BackMirror를 처음 쓰는 분들이 가장 많이 궁금해하는 것들을 모았어요.</p>
+  <section class="faq2-hero">
+    <div class="faq2-hero-inner">
+      <span class="faq2-kicker">Q &amp; A / FREQUENTLY ASKED</span>
+      <h1>자주 묻는<br/><span class="accent">질문.</span></h1>
+      <p class="lede">
+        BackMirror가 영상을 어떻게 보고, 무엇을 지키며, 점수를 어떻게 매기는지 —
+        <b>가장&nbsp;많이&nbsp;받은&nbsp;질문</b>을 모았습니다.
+      </p>
+    </div>
   </section>
 
-  <section class="team-faq">
-    <div class="faq-list">{faq}</div>
+  <section class="faq2-list">
+    <div class="faq2-list-head">
+      <span class="label">자주 묻는 질문 / FAQ</span>
+      <span class="count">05 Questions</span>
+    </div>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">01</span>
+        <span class="q-text">내 블랙박스 영상은 어디에 저장되나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          분석은 사용자 PC에서 <b>로컬로 처리</b>됩니다. 영상이 외부 서버로 전송되지 않으며,
+          분석 기록은 본인 기기(<b>~/.drivingassis</b>)에만 저장돼요.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">02</span>
+        <span class="q-text">BackMirror는 영상을 어떻게 분석하나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <div class="a-text">
+          세 단계를 거칩니다.
+          <ul class="a-steps">
+            <li><span class="st-n">①</span><span><b>YOLO 검출</b> — 차량·보행자·신호를 프레임 단위로 찾아냅니다.</span></li>
+            <li><span class="st-n">②</span><span><b>이벤트 추출</b> — 룰 기반으로 급제동·차선&nbsp;이탈·차간거리&nbsp;부족 같은 위험 이벤트를 가려냅니다.</span></li>
+            <li><span class="st-n">③</span><span><b>VLM 코칭</b> — 그 순간을 <span class="sig">상황 → 위험 → 행동</span> 3단계로 해석해 코칭 문장을 만듭니다.</span></li>
+          </ul>
+        </div>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">03</span>
+        <span class="q-text">TMAP 운전점수랑 뭐가 다른가요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          TMAP UBI는 <b>'몇 점'</b>이라는 결과를 줍니다. BackMirror는
+          <span class="sig">왜&nbsp;위험했고</span> 다음 주행에서 <span class="sig">무엇을&nbsp;바꿔야&nbsp;하는지</span>라는
+          맥락 코칭을 줍니다. 점수가 아니라 코치예요.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">04</span>
+        <span class="q-text">점수는 어떻게 매겨지나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          신호·차선·보행자·속도·안전거리 <b>5개 카테고리</b>가 각 100점에서 시작하고,
+          위험 이벤트마다 감점됩니다. 카테고리별 <b>최대 감점 폭은 제한</b>돼,
+          한 종류의 실수가 점수를 완전히 무너뜨리지 않도록 했어요.
+        </p>
+      </div>
+    </details>
+
+    <details class="faq2-item">
+      <summary>
+        <span class="q-idx">05</span>
+        <span class="q-text">객체를 추적(tracking)하나요?</span>
+        {chev}
+      </summary>
+      <div class="a-wrap">
+        <div class="a-rail"></div>
+        <p class="a-text">
+          현재는 <b>프레임 단위 검출</b> 기반입니다. 같은 객체에 ID를 부여하는 추적(ByteTrack 등)은
+          로드맵에 있으며, 지금은 <span class="sig">추적된 척하는 가짜 ID를 보여주지 않습니다.</span>
+        </p>
+      </div>
+    </details>
   </section>
 
-  <footer class="team-foot">© 2026 BACKMIRROR · Team BackMirror</footer>
+  <section class="faq2-closing">
+    <p class="tc-quote">궁금한 게 더 있나요?<br/><span class="accent">영상 한 편이면 충분해요.</span></p>
+    <p class="tc-sub">대부분의 질문은 직접 분석해보면 풀립니다. 블랙박스 영상을 올리면 BackMirror가 그 자리에서 답을 보여드려요.</p>
+  </section>
+
+  <footer class="faq2-foot">© 2026 BACKMIRROR · 초보운전자를 위한 운전 코치</footer>
 </div>
 """
 

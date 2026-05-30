@@ -2603,22 +2603,6 @@ body:has(.dc-v3-root) main {
 .dc-v3-root .results-error .ready-btn-go { margin-top: 18px; }
 
 /* ===== 팀 소개 페이지 (team_screen_html) ===== */
-.dc-v3-root .team-nav {
-  position: sticky; top: 0; z-index: 40;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px var(--v3-pad);
-  background: rgba(5,5,5,0.72); backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--line);
-}
-.dc-v3-root .team-nav .brand { position: static; }
-.dc-v3-root .team-back {
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
-  background: transparent; border: 1px solid var(--line); border-radius: 999px;
-  padding: 8px 16px; cursor: pointer; transition: all .2s var(--v3-ease);
-}
-.dc-v3-root .team-back:hover { color: var(--signal); border-color: var(--signal); }
-
 .dc-v3-root .team-hero {
   min-height: 76vh; display: flex; flex-direction: column;
   justify-content: center; gap: 22px;
@@ -2633,8 +2617,6 @@ body:has(.dc-v3-root) main {
   font-size: clamp(15px, 1.6vw, 19px); line-height: 1.75;
   color: var(--muted); max-width: 62ch; margin: 0;
 }
-.dc-v3-root .faq-hero { min-height: 54vh; }
-
 .dc-v3-root .team-approach,
 .dc-v3-root .team-members,
 .dc-v3-root .team-faq {
@@ -2650,63 +2632,8 @@ body:has(.dc-v3-root) main {
   letter-spacing: -0.03em; margin: 0 0 38px; color: var(--ink);
 }
 
-.dc-v3-root .approach-flow {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
-}
-.dc-v3-root .af-step {
-  border: 1px solid var(--line); border-radius: 14px;
-  background: var(--bg-2); padding: 24px 22px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.dc-v3-root .af-num {
-  font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  letter-spacing: 0.2em; color: var(--signal);
-}
-.dc-v3-root .af-step b { font-size: 18px; font-weight: 700; color: var(--ink); }
-.dc-v3-root .af-step p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
-.dc-v3-root .approach-diff {
-  margin: 34px 0 0; font-size: clamp(18px, 2.2vw, 26px);
-  line-height: 1.5; color: var(--ink); font-weight: 600; letter-spacing: -0.02em;
-}
-.dc-v3-root .approach-diff b { color: var(--muted-2); font-weight: 600; }
-.dc-v3-root .approach-diff .accent { color: var(--signal); font-style: normal; }
-
-.dc-v3-root .member-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
-}
-.dc-v3-root .member {
-  border: 1px solid var(--line); border-radius: 16px;
-  background: var(--bg-2); padding: 30px 26px;
-  display: flex; flex-direction: column; gap: 12px;
-  transition: border-color .25s var(--v3-ease), transform .25s var(--v3-ease);
-}
-.dc-v3-root .member:hover { border-color: rgba(0,229,154,0.4); transform: translateY(-3px); }
-.dc-v3-root .member .m-role {
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  letter-spacing: 0.16em; text-transform: uppercase; color: var(--signal);
-}
-.dc-v3-root .member h3 { font-size: 26px; font-weight: 800; margin: 0; color: var(--ink); letter-spacing: -0.02em; }
-.dc-v3-root .member p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--muted); flex: 1; }
-.dc-v3-root .member .m-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }
-.dc-v3-root .member .m-tags span {
-  font-family: 'JetBrains Mono', monospace; font-size: 10px;
-  letter-spacing: 0.06em; color: var(--muted-2);
-  border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px;
-}
-
-.dc-v3-root .faq-list { border-top: 1px solid var(--line); }
-.dc-v3-root .faq-item { border-bottom: 1px solid var(--line); }
-.dc-v3-root .faq-item > summary {
-  list-style: none; cursor: pointer; display: flex; align-items: center;
-  gap: 16px; padding: 22px 4px; font-size: clamp(15px,1.7vw,19px);
-  font-weight: 600; color: var(--ink); transition: color .2s var(--v3-ease);
-}
-.dc-v3-root .faq-item > summary::-webkit-details-marker { display: none; }
-.dc-v3-root .faq-item > summary span { flex: 1; }
-.dc-v3-root .faq-item > summary:hover { color: var(--signal); }
-.dc-v3-root .faq-item .chev { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); transition: transform .25s var(--v3-ease); }
-.dc-v3-root .faq-item[open] .chev { transform: rotate(180deg); color: var(--signal); }
-.dc-v3-root .faq-item p { margin: 0; padding: 0 4px 24px; font-size: 14.5px; line-height: 1.75; color: var(--muted); max-width: 72ch; }
+/* (구 team_screen 전용 .approach-flow/.af-step/.member 스타일은 .team2 리디자인
+   으로 대체됨 — 새 정의는 이 파일 하단의 "팀 소개 v2" 블록 참고.) */
 
 .dc-v3-root .team-foot {
   text-align: center; padding: 40px var(--v3-pad) 60px;
@@ -2715,10 +2642,371 @@ body:has(.dc-v3-root) main {
   border-top: 1px solid var(--line);
 }
 
-@media (max-width: 900px) {
-  .dc-v3-root .approach-flow { grid-template-columns: repeat(2, 1fr); }
-  .dc-v3-root .member-grid { grid-template-columns: 1fr; }
+/* =============================================================================
+   팀 소개 v2 (.team2) — 시네마틱 리디자인. FAQ가 공유하는 .team-hero/.team-foot
+   를 건드리지 않도록 전부 .dc-v3-root.team2 로 스코프. 겹치는 클래스(team-hero,
+   af-step, member ...)는 base 누수분을 명시적으로 reset.
+   ============================================================================= */
+/* TOP BAR — brand 는 _brand_html()(.brand), 뒤로가기는 .history-back(pill) 재사용 */
+.dc-v3-root.team2 .team-bar {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px var(--v3-pad);
+  background: rgba(5,5,5,0.7);
+  backdrop-filter: saturate(140%) blur(14px);
+  border-bottom: 1px solid var(--line);
 }
+.dc-v3-root.team2 .team-bar .brand { position: static; }
+/* 뒤로가기 버튼은 HISTORY 와 동일한 .history-back(pill) 재사용 */
+
+/* HERO — cinematic, road-perspective grid */
+.dc-v3-root.team2 .team-hero {
+  position: relative; min-height: calc(100vh - 67px);
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 0; max-width: none; margin: 0;
+  padding: 0 var(--v3-pad); overflow: hidden;
+}
+.dc-v3-root.team2 .team-hero::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 80% at 50% 8%, rgba(0,229,154,0.10), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.022) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.022) 0 1px, transparent 1px 64px);
+  pointer-events: none;
+  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 70%, transparent);
+}
+.dc-v3-root.team2 .team-hero::after {
+  content: ""; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(680px, 80%); height: 1px;
+  background: linear-gradient(to right, transparent, rgba(0,229,154,0.5), transparent);
+}
+.dc-v3-root.team2 .team-hero-inner { position: relative; z-index: 2; max-width: 1100px; margin: 0 auto; width: 100%; }
+.dc-v3-root.team2 .team-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase;
+  color: var(--signal); display: inline-flex; align-items: center; gap: 12px;
+}
+.dc-v3-root.team2 .team-kicker::before { content: ""; width: 28px; height: 1px; background: var(--signal); }
+.dc-v3-root.team2 .team-hero h1 {
+  margin: 26px 0 0; font-size: clamp(44px, 6.6vw, 104px);
+  line-height: 0.98; letter-spacing: -0.045em; font-weight: 800; color: var(--ink);
+}
+.dc-v3-root.team2 .team-hero h1 .accent { color: var(--signal); }
+.dc-v3-root.team2 .team-hero .lede {
+  margin: 30px 0 0; max-width: 50ch;
+  font-size: clamp(17px, 1.6vw, 21px); line-height: 1.65; color: var(--muted);
+}
+.dc-v3-root.team2 .team-hero .lede b { color: var(--ink); font-weight: 600; }
+.dc-v3-root.team2 .team-hero-meta { margin-top: 44px; display: flex; flex-wrap: wrap; gap: 28px; }
+.dc-v3-root.team2 .team-hero-meta .hm { display: flex; flex-direction: column; gap: 6px; }
+.dc-v3-root.team2 .team-hero-meta .hm .n {
+  font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 500;
+  letter-spacing: -0.02em; color: var(--ink);
+}
+.dc-v3-root.team2 .team-hero-meta .hm .l {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted-2);
+}
+.dc-v3-root.team2 .team-hero-meta .hm + .hm { padding-left: 28px; border-left: 1px solid var(--line); }
+.dc-v3-root.team2 .team-scroll-cue {
+  position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 2;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted-2);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.dc-v3-root.team2 .team-scroll-cue .line {
+  width: 1px; height: 26px;
+  background: linear-gradient(to bottom, var(--signal), transparent);
+  animation: teamCue 1.8s var(--v3-ease) infinite;
+}
+@keyframes teamCue { 0%{ transform: scaleY(0); transform-origin: top; } 50%{ transform: scaleY(1); transform-origin: top; } 50.1%{ transform-origin: bottom; } 100%{ transform: scaleY(0); transform-origin: bottom; } }
+
+/* APPROACH */
+.dc-v3-root.team2 .team-approach { max-width: 1100px; margin: 0 auto; padding: clamp(72px, 12vw, 140px) var(--v3-pad) 0; }
+.dc-v3-root.team2 .approach-head { max-width: 56ch; }
+.dc-v3-root.team2 .approach-head .label {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--signal);
+}
+.dc-v3-root.team2 .approach-head h2 {
+  margin: 16px 0 0; font-size: clamp(28px, 3.4vw, 46px);
+  line-height: 1.12; letter-spacing: -0.03em; font-weight: 800; color: var(--ink);
+}
+.dc-v3-root.team2 .approach-head h2 em { color: var(--signal); font-style: normal; }
+.dc-v3-root.team2 .approach-head p { margin: 18px 0 0; font-size: 16px; line-height: 1.65; color: var(--muted); }
+.dc-v3-root.team2 .approach-flow {
+  margin-top: clamp(40px, 6vw, 64px); display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 0; border: 1px solid var(--line); background: var(--bg-2);
+}
+.dc-v3-root.team2 .af-step {
+  position: relative; padding: 26px 24px 28px; border-right: 1px solid var(--line);
+  border-radius: 0; display: flex; flex-direction: column; gap: 16px;
+  transition: background-color .3s var(--v3-ease);
+}
+.dc-v3-root.team2 .af-step:last-child { border-right: none; }
+.dc-v3-root.team2 .af-step:hover { background: rgba(0,229,154,0.03); }
+.dc-v3-root.team2 .af-step::after {
+  content: ""; position: absolute; top: 38px; right: -7px; z-index: 2;
+  width: 12px; height: 12px; transform: rotate(45deg);
+  border-top: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--bg-2);
+}
+.dc-v3-root.team2 .af-step:last-child::after { display: none; }
+.dc-v3-root.team2 .af-num {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--signal);
+}
+.dc-v3-root.team2 .af-ic {
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); color: var(--ink);
+}
+.dc-v3-root.team2 .af-ic svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.4; fill: none; }
+.dc-v3-root.team2 .af-step h3 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.dc-v3-root.team2 .af-step p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--muted); }
+.dc-v3-root.team2 .af-tag {
+  margin-top: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2);
+  padding-top: 14px; border-top: 1px solid var(--line);
+}
+.dc-v3-root.team2 .approach-diff {
+  margin: clamp(40px, 6vw, 64px) 0 0; font-size: clamp(18px, 2.2vw, 26px);
+  line-height: 1.5; color: var(--ink); font-weight: 600; letter-spacing: -0.02em;
+}
+.dc-v3-root.team2 .approach-diff b { color: var(--muted-2); font-weight: 600; }
+.dc-v3-root.team2 .approach-diff .accent { color: var(--signal); font-style: normal; }
+
+/* MEMBERS */
+.dc-v3-root.team2 .team-members { max-width: 1100px; margin: 0 auto; padding: clamp(72px, 12vw, 140px) var(--v3-pad) 0; }
+.dc-v3-root.team2 .members-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.dc-v3-root.team2 .members-head .label {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--signal);
+}
+.dc-v3-root.team2 .members-head h2 {
+  margin: 16px 0 0; font-size: clamp(28px, 3.4vw, 46px);
+  line-height: 1.12; letter-spacing: -0.03em; font-weight: 800; color: var(--ink);
+}
+.dc-v3-root.team2 .members-head .hint {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2);
+}
+.dc-v3-root.team2 .members-grid { margin-top: clamp(36px, 5vw, 56px); display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.dc-v3-root.team2 .member {
+  border: 1px solid var(--line); border-radius: 0; padding: 0; display: block;
+  background: var(--bg-2); overflow: hidden;
+  transition: border-color .3s var(--v3-ease), transform .3s var(--v3-ease);
+}
+.dc-v3-root.team2 .member:hover { border-color: rgba(0,229,154,0.3); transform: translateY(-3px); }
+.dc-v3-root.team2 .member .m-top { position: relative; padding: 22px 22px 0; display: flex; align-items: flex-start; justify-content: space-between; }
+.dc-v3-root.team2 .member .m-role-ic {
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); color: var(--signal);
+  transition: background-color .3s var(--v3-ease);
+}
+.dc-v3-root.team2 .member:hover .m-role-ic { background: rgba(0,229,154,0.06); }
+.dc-v3-root.team2 .member .m-role-ic svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.4; fill: none; }
+.dc-v3-root.team2 .member .m-idx { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; color: var(--muted-2); }
+.dc-v3-root.team2 .member .m-body { padding: 22px; }
+.dc-v3-root.team2 .member .m-role {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--signal);
+}
+.dc-v3-root.team2 .member .m-name { margin: 10px 0 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
+.dc-v3-root.team2 .member .m-name .en {
+  display: block; font-family: Inter, sans-serif; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-2); margin-top: 6px;
+}
+.dc-v3-root.team2 .member .m-desc { margin: 16px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.dc-v3-root.team2 .member .m-stack { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 6px; }
+.dc-v3-root.team2 .member .m-stack .chip {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+  padding: 5px 9px; border: 1px solid var(--line); color: var(--muted);
+}
+.dc-v3-root.team2 .member .m-stack .chip.lead { border-color: rgba(0,229,154,0.4); color: var(--signal); }
+
+/* CLOSING */
+.dc-v3-root.team2 .team-closing { max-width: 1100px; margin: 0 auto; padding: clamp(72px, 12vw, 150px) var(--v3-pad); text-align: center; }
+.dc-v3-root.team2 .team-closing .tc-quote {
+  font-size: clamp(24px, 3.2vw, 40px); line-height: 1.3; letter-spacing: -0.03em;
+  font-weight: 800; max-width: 24ch; margin: 0 auto;
+}
+.dc-v3-root.team2 .team-closing .tc-quote .accent { color: var(--signal); }
+.dc-v3-root.team2 .team-closing .tc-sub { margin: 22px auto 0; max-width: 44ch; font-size: 15px; line-height: 1.6; color: var(--muted); }
+
+/* responsive */
+@media (max-width: 880px) {
+  .dc-v3-root.team2 .approach-flow { grid-template-columns: 1fr 1fr; }
+  .dc-v3-root.team2 .af-step:nth-child(2) { border-right: none; }
+  .dc-v3-root.team2 .af-step:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .dc-v3-root.team2 .af-step::after { display: none; }
+  .dc-v3-root.team2 .members-grid { grid-template-columns: 1fr; max-width: 520px; margin-inline: auto; }
+}
+@media (max-width: 520px) {
+  .dc-v3-root.team2 .approach-flow { grid-template-columns: 1fr; }
+  .dc-v3-root.team2 .af-step { border-right: none; border-bottom: 1px solid var(--line); }
+  .dc-v3-root.team2 .af-step:last-child { border-bottom: none; }
+}
+
+/* =============================================================================
+   자주 묻는 질문 v2 (.faq2) — 시네마틱 아코디언. 팀 페이지와 동일하게 전부
+   .dc-v3-root.faq2 로 스코프해 .team-*/.team2 와 충돌 없음. brand 는
+   _brand_html()(.brand) 재사용 → .v3-brand 대신 .faq2-bar .brand 로 정렬.
+   ============================================================================= */
+.dc-v3-root.faq2 svg { display: block; }
+
+/* 상단 바 */
+.dc-v3-root.faq2 .faq2-bar {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px var(--v3-pad);
+  background: rgba(5,5,5,0.7);
+  backdrop-filter: saturate(140%) blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.dc-v3-root.faq2 .faq2-bar .brand { position: static; }
+/* 뒤로가기 버튼은 HISTORY 와 동일한 .history-back(pill) 재사용 */
+
+/* HERO — 임베드 고려 min-height */
+.dc-v3-root.faq2 .faq2-hero {
+  position: relative; min-height: clamp(360px, 56vh, 560px);
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 0 var(--v3-pad); overflow: hidden;
+}
+.dc-v3-root.faq2 .faq2-hero::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 80% at 50% 8%, rgba(0,229,154,0.10), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.022) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.022) 0 1px, transparent 1px 64px);
+  pointer-events: none;
+  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 70%, transparent);
+}
+.dc-v3-root.faq2 .faq2-hero::after {
+  content: ""; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(680px, 80%); height: 1px;
+  background: linear-gradient(to right, transparent, rgba(0,229,154,0.5), transparent);
+}
+.dc-v3-root.faq2 .faq2-hero-inner { position: relative; z-index: 2; max-width: 1100px; margin: 0 auto; width: 100%; }
+.dc-v3-root.faq2 .faq2-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase;
+  color: var(--signal); display: inline-flex; align-items: center; gap: 12px;
+}
+.dc-v3-root.faq2 .faq2-kicker::before { content: ""; width: 28px; height: 1px; background: var(--signal); }
+.dc-v3-root.faq2 .faq2-hero h1 {
+  margin: 24px 0 0; font-size: clamp(40px, 5.6vw, 84px);
+  line-height: 0.98; letter-spacing: -0.045em; font-weight: 800; color: var(--ink);
+}
+.dc-v3-root.faq2 .faq2-hero h1 .accent { color: var(--signal); }
+.dc-v3-root.faq2 .faq2-hero .lede {
+  margin: 26px 0 0; max-width: 52ch;
+  font-size: clamp(16px, 1.5vw, 20px); line-height: 1.65; color: var(--muted);
+}
+.dc-v3-root.faq2 .faq2-hero .lede b { color: var(--ink); font-weight: 600; }
+
+/* FAQ 본문 — <details>/<summary> 아코디언 */
+.dc-v3-root.faq2 .faq2-list { max-width: 1100px; margin: 0 auto; padding: clamp(48px, 8vw, 96px) var(--v3-pad) 0; }
+.dc-v3-root.faq2 .faq2-list-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 8px; padding-bottom: 22px;
+}
+.dc-v3-root.faq2 .faq2-list-head .label {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--signal);
+}
+.dc-v3-root.faq2 .faq2-list-head .count {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-2);
+}
+.dc-v3-root.faq2 details.faq2-item { border-top: 1px solid var(--line); }
+.dc-v3-root.faq2 details.faq2-item:last-of-type { border-bottom: 1px solid var(--line); }
+.dc-v3-root.faq2 details.faq2-item > summary {
+  list-style: none; cursor: pointer;
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 20px; padding: 26px 4px;
+  transition: color .2s var(--v3-ease);
+}
+.dc-v3-root.faq2 details.faq2-item > summary::-webkit-details-marker { display: none; }
+.dc-v3-root.faq2 details.faq2-item .q-idx {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  letter-spacing: 0.12em; color: var(--muted-2); transition: color .2s var(--v3-ease);
+}
+.dc-v3-root.faq2 details.faq2-item .q-text {
+  font-size: clamp(17px, 1.8vw, 21px); font-weight: 700;
+  letter-spacing: -0.015em; color: var(--ink); transition: color .2s var(--v3-ease);
+}
+.dc-v3-root.faq2 details.faq2-item .q-chevron {
+  width: 22px; height: 22px; color: var(--muted-2);
+  transition: transform .3s var(--v3-ease), color .2s var(--v3-ease);
+}
+.dc-v3-root.faq2 details.faq2-item .q-chevron svg { width: 100%; height: 100%; stroke: currentColor; stroke-width: 2; fill: none; }
+.dc-v3-root.faq2 details.faq2-item > summary:hover .q-text,
+.dc-v3-root.faq2 details.faq2-item > summary:hover .q-idx { color: var(--signal); }
+.dc-v3-root.faq2 details.faq2-item > summary:hover .q-chevron { color: var(--signal); }
+.dc-v3-root.faq2 details.faq2-item[open] .q-chevron { transform: rotate(180deg); color: var(--signal); }
+.dc-v3-root.faq2 details.faq2-item[open] .q-idx { color: var(--signal); }
+.dc-v3-root.faq2 details.faq2-item .a-wrap {
+  display: grid; grid-template-columns: auto 1fr; gap: 20px; padding: 0 4px 28px;
+}
+.dc-v3-root.faq2 details.faq2-item .a-rail {
+  width: 2px; background: linear-gradient(to bottom, var(--signal), rgba(0,229,154,0.15)); margin-left: 6px;
+}
+.dc-v3-root.faq2 details.faq2-item .a-text { max-width: 72ch; font-size: 15px; line-height: 1.8; color: var(--muted); }
+.dc-v3-root.faq2 details.faq2-item .a-text b { color: var(--ink); font-weight: 600; }
+.dc-v3-root.faq2 details.faq2-item .a-text .sig { color: var(--signal); font-weight: 600; }
+.dc-v3-root.faq2 details.faq2-item .a-steps { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.dc-v3-root.faq2 details.faq2-item .a-steps li { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: baseline; }
+.dc-v3-root.faq2 details.faq2-item .a-steps li .st-n {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--signal);
+}
+.dc-v3-root.faq2 details.faq2-item[open] .a-wrap { animation: faq2Open .4s var(--v3-ease); }
+@keyframes faq2Open { from{ opacity: 0; transform: translateY(-4px); } to{ opacity: 1; transform: none; } }
+
+/* 클로징 + footer */
+.dc-v3-root.faq2 .faq2-closing { max-width: 1100px; margin: 0 auto; padding: clamp(64px, 10vw, 120px) var(--v3-pad); text-align: center; }
+.dc-v3-root.faq2 .faq2-closing .tc-quote {
+  font-size: clamp(22px, 2.8vw, 34px); line-height: 1.32; letter-spacing: -0.03em;
+  font-weight: 800; max-width: 26ch; margin: 0 auto;
+}
+.dc-v3-root.faq2 .faq2-closing .tc-quote .accent { color: var(--signal); }
+.dc-v3-root.faq2 .faq2-closing .tc-sub { margin: 20px auto 0; max-width: 46ch; font-size: 15px; line-height: 1.65; color: var(--muted); }
+.dc-v3-root.faq2 .faq2-foot {
+  border-top: 1px solid var(--line); padding: 20px var(--v3-pad); text-align: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted-2);
+}
+
+/* =============================================================================
+   화면 전환 마이크로 인터랙션 — state 전환 시 보조 화면이 부드럽게 페이드인.
+   IDLE(자체 reveal)·ANALYZING(실시간 progress 갱신)은 깜빡임 방지로 제외.
+   ============================================================================= */
+@keyframes dcScreenIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.dc-v3-root.team2,
+.dc-v3-root.faq2,
+.dc-v3-root.results-root,
+.dc-v3-root.ready-root,
+.dc-v3-root.history-root {
+  animation: dcScreenIn .45s var(--v3-ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dc-v3-root.team2, .dc-v3-root.faq2, .dc-v3-root.results-root,
+  .dc-v3-root.ready-root, .dc-v3-root.history-root { animation: none; }
+}
+
+/* =============================================================================
+   포커스 / 액티브 — 키보드 접근성(:focus-visible signal 링)과 클릭 피드백.
+   :focus-visible 이라 마우스 클릭 시엔 링이 뜨지 않고 키보드 탭에서만 보임.
+   node-card 는 자체 포커스 스타일(border signal)이 있어 건드리지 않음.
+   ============================================================================= */
+.dc-v3-root a:focus-visible,
+.dc-v3-root button:focus-visible,
+.dc-v3-root summary:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+.dc-v3-root button:active { filter: brightness(0.92); }
 
 .dc-v3-root .moments-grid {
   display: grid;
