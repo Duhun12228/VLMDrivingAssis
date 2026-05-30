@@ -142,6 +142,14 @@ DC_BOOT_JS = """
         document.querySelector('.dc-results-again-hit')?.click();
       });
     }
+    // RESULTS '← 기록' (HISTORY 드릴다운에서만 표시) → 기록 목록으로 복귀
+    const resultsToHistory = document.getElementById('results-tohistory-btn');
+    if (resultsToHistory && !resultsToHistory.__bound) {
+      resultsToHistory.__bound = true;
+      resultsToHistory.addEventListener('click', () => {
+        document.querySelector('.dc-history-hit')?.click();
+      });
+    }
 
     // --- 3f. RESULTS timeline + moment cards → seek the annotated video ---
     // Any element with `data-tc` (timeline marker, label button, moment card)
@@ -193,11 +201,11 @@ DC_BOOT_JS = """
       resultsVideo.addEventListener('loadedmetadata', updatePlayhead);
     }
 
-    // --- 3d. ANALYZING cancel button → reset to IDLE ---
-    // The visible '분석 중단' button in the new analyzing nav. We don't
-    // actually interrupt the run_analysis generator (Gradio queues it to
-    // completion); the visible state just snaps back to IDLE and the
-    // generator's eventual output goes nowhere visible.
+    // --- 3d. ANALYZING cancel button → reset to IDLE + cancel the run ---
+    // The visible '분석 중단' button bridges to the hidden home button, which
+    // both snaps the view back to IDLE and cancels the running run_analysis
+    // generator (see home_btn.click cancels=[run_evt] server-side). The
+    // cancelled run never reaches save_analysis, so it leaves no history row.
     const analyzCancel = document.getElementById('analyz-cancel-btn');
     if (analyzCancel && !analyzCancel.__bound) {
       analyzCancel.__bound = true;
@@ -802,6 +810,7 @@ def go_history_drilldown(target_session_id: str):
         event_stills={},              # event stills were temp jpgs, also gone
         session_id=target.session_id,
         prior=prior,
+        from_history=True,            # show the '← 기록' back button in the nav
     )
     return (
         gr.update(visible=False),     # idle
@@ -818,26 +827,40 @@ def go_history_drilldown(target_session_id: str):
 
 
 def on_file_uploaded(file_obj, progress=gr.Progress()):
-    """IDLE → UPLOADED. Normalize to browser-safe mp4 and build the Ready screen."""
+    """IDLE → UPLOADED. Normalize to browser-safe mp4 and build the Ready screen.
+
+    Guards the demo against bad input: a file that can't be transcoded or
+    opened (corrupt / unsupported codec) shows a gentle warning and stays on
+    IDLE, instead of crashing or marching into a doomed analysis."""
+    idle = (
+        gr.update(visible=True),
+        gr.update(visible=False),
+        gr.update(visible=False),
+        gr.update(visible=False),
+        gr.update(visible=False),      # history_screen
+        gr.update(visible=False),      # team_screen
+        gr.update(visible=False),      # faq_screen
+        None,                          # video_state (clear)
+        ready_screen_html(),
+    )
     if file_obj is None:
-        return (
-            gr.update(visible=True),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),      # history_screen
-            gr.update(visible=False),      # team_screen
-            gr.update(visible=False),      # faq_screen
-            None,
-            ready_screen_html(),
-        )
+        return idle
 
     src = file_obj if isinstance(file_obj, str) else getattr(file_obj, "name", None)
-    progress(0.3, desc="브라우저 호환 형식으로 변환 중…")
-    normalized = normalize_for_browser(src) if src else None
-    progress(1.0, desc="준비 완료")
+    try:
+        progress(0.3, desc="브라우저 호환 형식으로 변환 중…")
+        normalized = normalize_for_browser(src) if src else None
+    except Exception:
+        normalized = None
 
     meta = _video_meta(normalized) if normalized else _video_meta("")
+    # 열 수 없는 영상(손상·미지원 코덱)은 분석까지 가지 않고 여기서 우아하게 안내.
+    # 오탐 방지: 해상도·길이가 '모두' 0일 때만 (부분 메타 누락은 통과시킨다).
+    if not normalized or (meta["width"] == 0 and meta["height"] == 0 and meta["duration"] <= 0):
+        gr.Warning("이 영상은 열 수 없어요. 다른 블랙박스 영상을 올려주세요.")
+        return idle
+
+    progress(1.0, desc="준비 완료")
     session_id = _new_session_id()
 
     return (
@@ -1016,7 +1039,9 @@ def _run_analysis_impl(video_path: str, analyz_meta: dict | None = None):
     score = calculate_score(events)
 
     # ── Phase 4b: annotated video + evidence stills ──
-    yield (screen(pct=88, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+    # 95%: 인코딩이 가장 무거운 작업이라 그 직전에 "마무리 임박"으로 올려둔다.
+    # (render_annotated_video 가 블로킹이라 인코딩 동안은 이 화면이 유지된다.)
+    yield (screen(pct=95, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
                   phase="render", poster_path=current_poster), gr.update())
     det_by_idx = {f.frame_idx: f for f in frames}
     ev_by_idx = {ev.frame_idx: ev for ev in events}
@@ -1044,6 +1069,11 @@ def _run_analysis_impl(video_path: str, analyz_meta: dict | None = None):
         )
     except OSError:
         pass  # history persistence is best-effort, never block the report
+
+    # 인코딩까지 끝났으니 100% 를 잠깐 보여줘 95%→결과 점프 대신 완료감을 준다.
+    yield (screen(pct=100, veh=veh_cum, ped=ped_cum, two=two_cum, risk=n_risk,
+                  phase="render", poster_path=current_poster), gr.update())
+    time.sleep(_PHASE_DWELL)
 
     # ── Done: fill the RESULTS screen (ANALYZING left as-is) ──
     yield (
@@ -1216,17 +1246,21 @@ def build_app() -> gr.Blocks:
                        show_progress="hidden")
 
         # UPLOADED → ANALYZING → RESULTS
-        analyze_btn.click(
+        # run_evt 를 잡아두어 '분석 중단'(home_btn 으로 브릿지)이 이 제너레이터를
+        # 실제로 취소할 수 있게 한다. (아래 home_btn.click 의 cancels 참고)
+        analyze_evt = analyze_btn.click(
             fn=go_analyzing,
             inputs=[video_state],
             outputs=[uploaded_screen, analyzing_screen, analyzing_html, analyz_state],
             show_progress="hidden",
-        ).then(
+        )
+        run_evt = analyze_evt.then(
             fn=run_analysis,
             inputs=[video_state, analyz_state],
             outputs=[analyzing_html, results_html],
             show_progress="hidden",
-        ).then(
+        )
+        run_evt.then(
             fn=go_results,
             outputs=[analyzing_screen, results_screen],
             show_progress="hidden",
@@ -1272,8 +1306,11 @@ def build_app() -> gr.Blocks:
         )
 
         # Header brand → IDLE (from any screen)
+        # 분석 중 홈/중단으로 나가면 run_analysis 제너레이터를 실제로 취소한다
+        # ('분석 중단'·brand·홈 모두 home_btn 으로 브릿지됨). 취소되면 generator 가
+        # save_analysis 까지 못 가므로 중단한 분석이 HISTORY 에 남지 않는다.
         home_btn.click(fn=go_idle, outputs=screen_outputs,
-                       show_progress="hidden")
+                       show_progress="hidden", cancels=[run_evt])
 
     return app
 

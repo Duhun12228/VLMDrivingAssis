@@ -377,6 +377,7 @@ def _hero_section() -> str:
     # Local hero.mp4 (in assets/) — served by Gradio via allowed_paths.
     # We use the gradio_api/file route which Gradio exposes for static files.
     hero_video = "/gradio_api/file=assets/hero.mp4"
+    hero_ai_video = "/gradio_api/file=assets/hero_ai.mp4"
     return f"""
     <section class="hero" id="dc-top">
       <div class="hero-top">
@@ -409,7 +410,7 @@ def _hero_section() -> str:
           <span class="frame-tc">00:00:13:21 · 24 fps</span>
           <video autoplay muted loop playsinline preload="auto"
                  aria-label="야간 주행 POV — AI 분석"
-                 src="{hero_video}"></video>
+                 src="{hero_ai_video}"></video>
 
           <svg class="ai-overlay" viewBox="0 0 1600 900" preserveAspectRatio="none">
             <defs>
@@ -629,7 +630,7 @@ def _report_section() -> str:
           <article class="km">
             <div class="km-img">
               <img alt="02:14 차선 변경"
-                src="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=900&q=80"/>
+                src="/gradio_api/file=assets/sample_lane.jpg"/>
               <svg class="km-overlay" viewBox="0 0 400 225" preserveAspectRatio="none">
                 <rect x="168" y="96" width="108" height="70"/>
                 <text x="168" y="90">HANDS · 0.96</text>
@@ -648,7 +649,7 @@ def _report_section() -> str:
           <article class="km">
             <div class="km-img">
               <img alt="06:47 차간거리"
-                src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=900&q=80"/>
+                src="/gradio_api/file=assets/sample_gap.jpg"/>
               <svg class="km-overlay" viewBox="0 0 400 225" preserveAspectRatio="none">
                 <rect class="amber" x="130" y="94" width="140" height="82"/>
                 <text class="amber" x="130" y="88">VEHICLE · 1.4s</text>
@@ -667,7 +668,7 @@ def _report_section() -> str:
           <article class="km">
             <div class="km-img">
               <img alt="10:32 급제동"
-                src="https://images.unsplash.com/photo-1485463611174-f302f6a5c1c9?auto=format&fit=crop&w=900&q=80"/>
+                src="/gradio_api/file=assets/sample_brake.jpg"/>
               <svg class="km-overlay" viewBox="0 0 400 225" preserveAspectRatio="none">
                 <rect class="risk" x="150" y="86" width="120" height="92"/>
                 <text class="risk" x="150" y="80">VEHICLE · BRAKE</text>
@@ -1306,7 +1307,8 @@ def _hero_quote_text(hero_event, hero_coaching) -> str:
     """One-sentence coaching line for the hero. Prefers VLM action_plan,
     falls back to a soft message when there's nothing to coach about."""
     if hero_event and hero_coaching and (hero_coaching.action_plan or "").strip():
-        return _first_coach_sentence(hero_coaching.action_plan)
+        # hero 는 큰 폰트라 캡을 더 짧게(55) — 장황한 첫 문장도 4줄 이내로.
+        return _first_coach_sentence(hero_coaching.action_plan, max_len=55)
     if hero_event:
         # event found but no coaching text — minimal fallback per severity
         if hero_event.severity == "danger":
@@ -1877,6 +1879,7 @@ def results_screen_html(
     event_stills: dict | None = None,
     session_id: str = "—",
     prior=None,
+    from_history: bool = False,
 ) -> str:
     """RESULTS v5 — coaching sentence is the hero, score is supporting,
     annotated video is the evidence. One self-contained HTML blob.
@@ -1937,6 +1940,15 @@ def results_screen_html(
     breakdown_section = _breakdown_section_html(score, prior)
 
     safe_name = filename or "주행 영상"
+    # HISTORY 드릴다운으로 열렸을 때만 '← 기록' 버튼을 노출 (dc-history-hit 로 브릿지).
+    # 분석 직후의 RESULTS 에는 기록 목록이 맥락에 없으므로 표시하지 않는다.
+    back_to_history = (
+        '<button class="history-back" type="button" id="results-tohistory-btn" '
+        'aria-label="기록으로 돌아가기">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M19 12 L5 12 M11 6 L5 12 L11 18"/></svg>기록</button>'
+    ) if from_history else ""
 
     return f"""
 <div class="dc-v3-root results-root">
@@ -1947,6 +1959,7 @@ def results_screen_html(
       <span>BACK<span class="accent">MIRROR</span></span>
     </a>
     <div class="results-nav-right">
+      {back_to_history}
       <span class="ready-pill"><span class="dot"></span>리포트 준비됨</span>
       <span>SESSION · {session_id}</span>
     </div>
